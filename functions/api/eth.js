@@ -22,10 +22,11 @@ async function handler({ request, env }) {
   }
 
   const base = "https://beaconcha.in";
-  const headers = {
-    Authorization: `Bearer ${key}`,
-    "Content-Type": "application/json",
-  };
+ const headers = {
+  Authorization: `Bearer ${key}`,
+  "Content-Type": "application/json",
+  "User-Agent": "GotNodes/1.0 (validators dashboard)",
+};
 
   const overviewReq = fetch(`${base}/api/v2/ethereum/validators`, {
     method: "POST",
