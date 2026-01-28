@@ -19,7 +19,11 @@ async function handler({ request, env }) {
 
   const network = "mainnet";
   const url = new URL(`https://glacier-api.avax.network/v1/networks/${network}/validators`);
-  if (nodeIds.length) url.searchParams.set("nodeIds", nodeIds.join(","));
+  // Glacier filters can be finicky across versions. Some accept comma-separated lists,
+  // others expect repeated query params. We do repeated params to be safe.
+  if (nodeIds.length) {
+    for (const id of nodeIds) url.searchParams.append("nodeIds", id);
+  }
   url.searchParams.set("pageSize", String(Math.min(100, Math.max(1, nodeIds.length || 10))));
 
   const res = await fetch(url.toString(), {
@@ -37,7 +41,7 @@ async function handler({ request, env }) {
     });
   }
 
-  const json = await res.json();
+  const json = await res.json().catch(() => ({}));
 
   const nAvaxToAvax = (x) => {
     const n = Number(x);
@@ -45,7 +49,9 @@ async function handler({ request, env }) {
     return n / 1e9;
   };
 
-  const out = (json?.validators || []).slice(0, 4).map((v) => {
+  const list = json?.validators || json?.data?.validators || [];
+
+  const out = (Array.isArray(list) ? list : []).slice(0, 4).map((v) => {
     const staked = nAvaxToAvax(v?.amountStaked);
     const delegated = nAvaxToAvax(v?.amountDelegated);
     const valReward = nAvaxToAvax(v?.rewards?.validationRewardAmount);
@@ -87,7 +93,17 @@ export async function onRequest(context) {
     return new Response("Method Not Allowed", { status: 405 });
   }
 
-  const res = await handler(context);
-  res.headers.set("Access-Control-Allow-Origin", "*");
-  return res;
+  try {
+    const res = await handler(context);
+    res.headers.set("Access-Control-Allow-Origin", "*");
+    return res;
+  } catch (e) {
+    return new Response(JSON.stringify({ error: "avax function crashed", detail: String(e?.message || e) }), {
+      status: 502,
+      headers: {
+        "Content-Type": "application/json",
+        "Access-Control-Allow-Origin": "*",
+      },
+    });
+  }
 }
