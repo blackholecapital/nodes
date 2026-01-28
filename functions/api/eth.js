@@ -172,7 +172,8 @@ async function fallbackV1({ key, validators }) {
   Object.keys(headers).forEach(k => headers[k] === undefined && delete headers[k]);
 
   const out = await Promise.all(
-    validators.slice(0, 50).map(async (index) => {
+    validators.slice(0, 4).map(async (index) => {
+      try {
       const v = await v1Validator({ base, headers, index });
       const bal = await v1Balances({ base, headers, index });
 
@@ -205,6 +206,21 @@ async function fallbackV1({ key, validators }) {
         roi30d: "—",
         finality: "—",
       };
+      } catch (e) {
+        const msg = String(e?.message || e);
+        const rateLimited = msg.includes("429") || msg.toLowerCase().includes("too many requests");
+        return {
+          validatorId: index,
+          status: rateLimited ? "RATE_LIMIT" : "ERROR",
+          online: null,
+          balanceEth: "—",
+          effectiveBalanceEth: "—",
+          apy30d: "—",
+          roi30d: "—",
+          finality: "—",
+          detail: msg.slice(0, 160),
+        };
+      }
     })
   );
 
@@ -219,10 +235,32 @@ async function handler({ request, env }) {
     return json({ validators: [] }, 200);
   }
 
+  // Cache: prevent hammering Beaconcha (avoids 429). We only ever render 4 slots.
+  const v4 = validators.slice(0, 4);
+  const cacheUrl = new URL(request.url);
+  cacheUrl.searchParams.set("validators", v4.join(","));
+  cacheUrl.searchParams.set("window", window || "30d");
+  const cacheKey = new Request(cacheUrl.toString(), { method: "GET" });
+  const cache = caches?.default;
+
+  if (cache) {
+    const hit = await cache.match(cacheKey);
+    if (hit) {
+      const r = new Response(hit.body, hit);
+      r.headers.set("X-GotNodes-Cache", "HIT");
+      return r;
+    }
+  }
+
   // Try v2 first (best data).
-  const v2 = await tryV2({ key, validators, window });
+  const v2 = await tryV2({ key, validators: v4, window });
   if (v2.ok) {
-    return json({ validators: v2.validators });
+    const res = json({ validators: v2.validators });
+    if (cache) {
+      res.headers.set("Cache-Control", "public, max-age=20");
+      await cache.put(cacheKey, res.clone());
+    }
+    return res;
   }
 
   // If v2 fails due to plan/tier selector limits, fall back to v1.
