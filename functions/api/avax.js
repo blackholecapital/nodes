@@ -17,6 +17,30 @@ async function handler({ request, env }) {
     nodeIds = Array.isArray(body.nodeIds) ? body.nodeIds : [];
   }
 
+  // Only the first 4 are rendered; don't fetch more than we need.
+  nodeIds = nodeIds.slice(0, 4);
+
+  if (!nodeIds.length) {
+    return new Response(JSON.stringify({ validators: [] }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+
+  // Cache: reduce Glacier calls during refresh loops.
+  const cacheUrl = new URL(request.url);
+  cacheUrl.searchParams.set("nodeIds", nodeIds.join(","));
+  const cacheKey = new Request(cacheUrl.toString(), { method: "GET" });
+  const cache = caches?.default;
+  if (cache) {
+    const hit = await cache.match(cacheKey);
+    if (hit) {
+      const r = new Response(hit.body, hit);
+      r.headers.set("X-GotNodes-Cache", "HIT");
+      return r;
+    }
+  }
+
   const network = "mainnet";
   const url = new URL(`https://glacier-api.avax.network/v1/networks/${network}/validators`);
   // Glacier filters can be finicky across versions. Some accept comma-separated lists,
@@ -69,10 +93,16 @@ async function handler({ request, env }) {
     };
   });
 
-  return new Response(JSON.stringify({ validators: out }), {
+  const resOut = new Response(JSON.stringify({ validators: out }), {
     status: 200,
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", "Cache-Control": "public, max-age=20" },
   });
+
+  if (cache) {
+    await cache.put(cacheKey, resOut.clone());
+  }
+
+  return resOut;
 }
 
 export async function onRequest(context) {
