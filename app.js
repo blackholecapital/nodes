@@ -247,17 +247,27 @@ async function refreshAll() {
   const ethIds = state.eth.slice(0, 4);
   const avaxIds = state.avax.slice(0, 4);
 
-  const [eth, avax] = await Promise.all([
+  const results = await Promise.allSettled([
     postJSON("/api/eth", { validators: ethIds, window: "30d" }),
     postJSON("/api/avax", { nodeIds: avaxIds }),
   ]);
 
-  renderCards(el.ethGrid, eth.validators || [], "eth");
-  renderCards(el.avaxGrid, avax.validators || [], "avax");
+  const eth = results[0].status === "fulfilled" ? results[0].value : null;
+  const avax = results[1].status === "fulfilled" ? results[1].value : null;
+
+  if (eth) renderCards(el.ethGrid, eth.validators || [], "eth");
+  if (avax) renderCards(el.avaxGrid, avax.validators || [], "avax");
 
   el.lastUpdate.textContent = nowStamp();
-  el.statusLine.textContent = "Locked. Loaded. Updating on schedule.";
-}
+
+  const errs = [];
+  if (!eth) errs.push(`ETH: ${String(results[0].reason || "failed")}`);
+  if (!avax) errs.push(`AVAX: ${String(results[1].reason || "failed")}`);
+  if (errs.length) {
+    el.statusLine.textContent = `Partial: ${errs.join(" | ")}`;
+  } else {
+    el.statusLine.textContent = "Locked. Loaded. Updating on schedule.";
+  }
 
 function bindEditMode() {
   if (!el.toggleEdit) return; // safety
