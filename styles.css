@@ -4,11 +4,15 @@
   --panel2: rgba(4, 12, 8, 0.85);
 
   /* ✅ CHANGE THESE TO MATCH YOUR WIREFRAME */
-  --green: #25ff7a;          /* your wireframe main green hex */
-  --green-rgb: 37 255 122;   /* SAME color as RGB (R G B) */
+  --green: #00ffaa;          /* Swap v1 wireframe green */
+  --green-rgb: 0 255 170;    /* Swap v1 wireframe green (R G B) */
 
-  --green2:#12c85b;          /* your wireframe secondary green hex */
-  --green2-rgb: 18 200 91;   /* SAME color as RGB (R G B) */
+  /* SAME color as RGB (R G B) */
+
+  --green2:#00e5a8;          /* Swap v1 secondary (slightly deeper) */
+  --green2-rgb: 0 229 168;   /* Swap v1 secondary (R G B) */
+
+  /* SAME color as RGB (R G B) */
 
   --text:#d7ffe6;
   --muted:#7fe7a8;
