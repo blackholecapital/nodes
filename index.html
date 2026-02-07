@@ -85,6 +85,9 @@
   </div>
 </header>
 
+    <div class="content-grid">
+      <div class="main-stack">
+
     <section class="panel">
       <div class="panel-title">
         <span class="chip">ETHEREUM</span>
@@ -120,6 +123,60 @@
         </div>
       </div>
     </footer>
+      </div>
+
+      <aside class="side-stack" aria-label="Network intelligence">
+        <section class="panel side-panel" id="ethIntelPanel">
+          <div class="panel-title">
+            <span class="chip">ETH</span>
+            <span class="panel-h">Intel</span>
+            <span class="panel-note" id="ethIntelStatus">loading…</span>
+          </div>
+
+          <div class="intel">
+            <div class="intel-metrics" id="ethIntelMetrics">
+              <!-- injected -->
+            </div>
+            <canvas class="intel-chart" id="ethIntelChart" width="320" height="120" aria-label="Ethereum sparkline chart"></canvas>
+
+            <div class="intel-live">
+              <div class="intel-live-top">
+                <div class="intel-live-title">LIVE TRACK</div>
+                <button class="btn btn-sm" id="ethTrackApply" type="button">APPLY</button>
+              </div>
+              <label class="edit-label" for="ethTrackInput">Ethereum Validator ID</label>
+              <input id="ethTrackInput" class="edit-text edit-input" type="text" placeholder="Example: 123456" />
+              <div class="intel-live-out" id="ethTrackOut">—</div>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel side-panel" id="avaxIntelPanel">
+          <div class="panel-title">
+            <span class="chip">AVAX</span>
+            <span class="panel-h">Intel</span>
+            <span class="panel-note" id="avaxIntelStatus">loading…</span>
+          </div>
+
+          <div class="intel">
+            <div class="intel-metrics" id="avaxIntelMetrics">
+              <!-- injected -->
+            </div>
+            <canvas class="intel-chart" id="avaxIntelChart" width="320" height="120" aria-label="Avalanche sparkline chart"></canvas>
+
+            <div class="intel-live">
+              <div class="intel-live-top">
+                <div class="intel-live-title">LIVE TRACK</div>
+                <button class="btn btn-sm" id="avaxTrackApply" type="button">APPLY</button>
+              </div>
+              <label class="edit-label" for="avaxTrackInput">Avalanche NodeID</label>
+              <input id="avaxTrackInput" class="edit-text edit-input" type="text" placeholder="Example: NodeID-…" />
+              <div class="intel-live-out" id="avaxTrackOut">—</div>
+            </div>
+          </div>
+        </section>
+      </aside>
+    </div>
   </main>
 
   <script src="./app.js"></script>
