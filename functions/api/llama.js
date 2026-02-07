@@ -1,22 +1,18 @@
 /**
- * /api/llama
+ * /api/llama?chain=Ethereum|Avalanche
  *
  * DefiLlama Pro API proxy (key kept server-side).
- * Auth model (per DefiLlama docs): key is inserted in the URL path:
- *   https://pro-api.llama.fi/{API_KEY}/{endpoint}
+ * Auth: https://pro-api.llama.fi/{API_KEY}/{endpoint}
  *
- * Env var:
- *   - VITE_LLAMA_API_KEY (preferred, per your note)
- *   - LLAMA_API_KEY (fallback)
+ * Env:
+ *  - VITE_LLAMA_API_KEY (preferred)
+ *  - LLAMA_API_KEY (fallback)
  */
 
 function json(data, status = 200, extraHeaders = {}) {
   return new Response(JSON.stringify(data), {
     status,
-    headers: {
-      "Content-Type": "application/json",
-      ...extraHeaders,
-    },
+    headers: { "Content-Type": "application/json", ...extraHeaders },
   });
 }
 
@@ -25,21 +21,28 @@ function toNum(x) {
   return Number.isFinite(n) ? n : null;
 }
 
-function pick30dSeries(arr, valueKey) {
-  const xs = Array.isArray(arr) ? arr : [];
+function pickVals(hist) {
+  // pro endpoint commonly returns an array of { date, tvl } or similar
+  const rows = Array.isArray(hist) ? hist : (Array.isArray(hist?.data) ? hist.data : []);
   const vals = [];
-  for (const it of xs.slice(-30)) {
-    const v = valueKey ? it?.[valueKey] : (it?.tvl ?? it?.totalLiquidityUSD ?? it?.value ?? it?.fees ?? it?.revenue);
-    const n = toNum(v);
-    if (n != null) vals.push(n);
+  for (const r of rows) {
+    const v = toNum(r?.tvl ?? r?.value ?? r?.totalLiquidityUSD);
+    if (v != null) vals.push(v);
   }
   return vals;
 }
 
-async function proGet({ key, path, cache, cacheTtl = 60 }) {
-  const url = `https://pro-api.llama.fi/${encodeURIComponent(key)}${path.startsWith("/") ? "" : "/"}${path}`;
+function pctChange(a, b) {
+  const x = toNum(a);
+  const y = toNum(b);
+  if (x == null || y == null || y === 0) return null;
+  return ((x - y) / y) * 100;
+}
 
+async function proFetch({ key, path, cache, ttl = 60 }) {
+  const url = `https://pro-api.llama.fi/${encodeURIComponent(key)}${path.startsWith("/") ? "" : "/"}${path}`;
   const cacheKey = new Request(url, { method: "GET" });
+
   if (cache) {
     const hit = await cache.match(cacheKey);
     if (hit) return hit.json();
@@ -48,130 +51,67 @@ async function proGet({ key, path, cache, cacheTtl = 60 }) {
   const res = await fetch(url, { headers: { accept: "application/json" } });
   if (!res.ok) {
     const text = await res.text().catch(() => "");
-    throw new Error(`DefiLlama ${path} failed: ${res.status} ${res.statusText} ${text}`.trim());
+    throw new Error(`DefiLlama failed ${res.status}: ${text}`.trim());
   }
-
   const data = await res.json();
 
   if (cache) {
     const cached = new Response(JSON.stringify(data), {
       headers: {
         "Content-Type": "application/json",
-        "Cache-Control": `public, max-age=${cacheTtl}`,
+        "Cache-Control": `public, max-age=${ttl}`,
       },
     });
     await cache.put(cacheKey, cached);
   }
-
   return data;
 }
 
 export async function onRequest(context) {
   const { request, env } = context;
 
-  if (request.method === "OPTIONS") {
-    return new Response(null, {
-      status: 204,
-      headers: {
-        "Access-Control-Allow-Origin": "*",
-        "Access-Control-Allow-Methods": "GET,OPTIONS",
-        "Access-Control-Allow-Headers": "Content-Type",
-        "Access-Control-Max-Age": "86400",
-      },
-    });
-  }
-
   try {
     const key = env.VITE_LLAMA_API_KEY || env.LLAMA_API_KEY;
-    if (!key) {
-      return json({ error: "Missing VITE_LLAMA_API_KEY env var" }, 500, {
-        "Access-Control-Allow-Origin": "*",
-      });
-    }
+    if (!key) return json({ error: "Missing VITE_LLAMA_API_KEY" }, 500);
 
     const url = new URL(request.url);
     const chain = url.searchParams.get("chain") || "Ethereum";
+
     const cache = caches?.default;
 
-    // Chain TVL history
-    const hist = await proGet({
+    // Historical chain TVL (v2 path)
+    const hist = await proFetch({
       key,
       path: `/api/v2/historicalChainTvl/${encodeURIComponent(chain)}`,
       cache,
-      cacheTtl: 120,
+      ttl: 120,
     });
 
-    const tvlSeries = pick30dSeries(hist, "tvl");
-    const tvlCurrent = tvlSeries.length ? tvlSeries[tvlSeries.length - 1] : null;
+    const vals = pickVals(hist);
+    const tvl30d = vals.slice(-30);
+    const current = tvl30d.length ? tvl30d[tvl30d.length - 1] : (vals.length ? vals[vals.length - 1] : null);
 
-    // Fees overview (may include charts)
-    let fees = null;
-    let feesSeries = [];
-    try {
-      const feesRaw = await proGet({
-        key,
-        path: `/api/overview/fees/${encodeURIComponent(chain)}`,
-        cache,
-        cacheTtl: 120,
-      });
+    // changes
+    const idx7 = tvl30d.length >= 8 ? tvl30d.length - 8 : null;   // 7 days back
+    const idx30 = tvl30d.length >= 30 ? 0 : null;
 
-      fees = {
-        totalFees24h: toNum(feesRaw?.totalFees24h ?? feesRaw?.fees24h),
-        totalRevenue24h: toNum(feesRaw?.totalRevenue24h ?? feesRaw?.revenue24h),
-        change_1d: toNum(feesRaw?.change_1d),
-      };
+    const change7dPct = idx7 != null ? pctChange(current, tvl30d[idx7]) : null;
+    const change30dPct = idx30 != null ? pctChange(current, tvl30d[idx30]) : null;
 
-      const tdc = feesRaw?.totalDataChart;
-      if (Array.isArray(tdc)) {
-        feesSeries = tdc
-          .slice(-30)
-          .map(row => toNum(Array.isArray(row) ? row[1] : null))
-          .filter(n => n != null);
-      }
-    } catch {
-      fees = null;
-      feesSeries = [];
-    }
-
-    // Stablecoin dominance
-    let stable = null;
-    try {
-      const st = await proGet({
-        key,
-        path: `/stablecoins/stablecoindominance/${encodeURIComponent(chain)}`,
-        cache,
-        cacheTtl: 300,
-      });
-      stable = {
-        dominance: toNum(st?.dominance),
-        totalCirculating: toNum(st?.totalCirculating),
-        largestStablecoin: st?.largestStablecoin ? {
-          name: String(st.largestStablecoin.name || ""),
-          symbol: String(st.largestStablecoin.symbol || ""),
-          circulating: toNum(st.largestStablecoin.circulating),
-          dominance: toNum(st.largestStablecoin.dominance),
-        } : null,
-      };
-    } catch {
-      stable = null;
-    }
-
-    const payload = {
+    return json({
       chain,
-      tvl: { current: tvlCurrent },
-      fees,
-      stablecoins: stable,
-      series: {
-        tvl30d: tvlSeries,
-        fees30d: feesSeries,
+      tvl: {
+        current,
+        change7dPct,
+        change30dPct,
       },
+      series: {
+        tvl30d,
+      },
+      updated: new Date().toLocaleString(),
       ts: Date.now(),
-    };
-
-    return json(payload, 200, { "Access-Control-Allow-Origin": "*" });
+    }, 200);
   } catch (e) {
-    return json({ error: "llama function crashed", detail: String(e?.message || e) }, 502, {
-      "Access-Control-Allow-Origin": "*",
-    });
+    return json({ error: "llama function crashed", detail: String(e?.message || e) }, 502);
   }
 }
