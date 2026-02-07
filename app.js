@@ -1,29 +1,18 @@
 /**
- * GOT NODES (beta)
- * Edit Mode + localStorage
+ * GOT NODES
  *
- * ETH validator data is fetched by VALIDATOR PUBLIC KEY (0x…).
- * AVAX validator data is fetched by NodeID-…
+ * - Right side: 2 DefiLlama TVL panels (ETH + AVAX) with charts
+ * - Right side: ETH live validator by PUBLIC KEY (0x…)
+ * - Main panels: ETH validators by pubkey, AVAX validators by NodeID
  */
 
-const DEFAULT_ETH_VALIDATORS = [
-  // Put real 0x validator pubkeys here (or use Edit Mode)
-  "0x",
-  "0x",
-  "0x",
-  "0x",
-];
+const DEFAULT_ETH_VALIDATORS = []; // keep empty by default; user can paste keys in Edit Mode
+const DEFAULT_AVAX_NODE_IDS = [];  // keep empty by default; user can paste NodeIDs in Edit Mode
 
-const DEFAULT_AVAX_NODE_IDS = [
-  "NodeID-1",
-  "NodeID-2",
-  "NodeID-3",
-  "NodeID-4",
-];
-
-const REFRESH_MS = 5 * 60 * 1000; // 5 minutes
+const REFRESH_MS = 5 * 60 * 1000;     // main panels
 const REFRESH_LABEL = "5:00";
-const LIVE_REFRESH_MS = 10 * 1000; // "real time" feel
+const LLAMA_REFRESH_MS = 60 * 1000;   // TVL panels
+const LIVE_REFRESH_MS = 10 * 1000;    // ETH pubkey live
 
 const LS_KEYS = {
   eth: "gotnodes.eth.pubkeys",
@@ -53,7 +42,15 @@ const el = {
   resetDefaults: document.getElementById("resetDefaults"),
   editMsg: document.getElementById("editMsg"),
 
-  // ETH live-by-pubkey box
+  // DefiLlama panels
+  ethTvlStatus: document.getElementById("ethTvlStatus"),
+  avaxTvlStatus: document.getElementById("avaxTvlStatus"),
+  ethTvlMetrics: document.getElementById("ethTvlMetrics"),
+  avaxTvlMetrics: document.getElementById("avaxTvlMetrics"),
+  ethTvlChart: document.getElementById("ethTvlChart"),
+  avaxTvlChart: document.getElementById("avaxTvlChart"),
+
+  // ETH live-by-pubkey
   ethLiveStatus: document.getElementById("ethLiveStatus"),
   ethPkInput: document.getElementById("ethPkInput"),
   ethPkApply: document.getElementById("ethPkApply"),
@@ -61,7 +58,7 @@ const el = {
   ethPkChart: document.getElementById("ethPkChart"),
 };
 
-el.refreshEvery.textContent = REFRESH_LABEL;
+if (el.refreshEvery) el.refreshEvery.textContent = REFRESH_LABEL;
 
 function nowStamp() {
   return new Date().toLocaleString();
@@ -76,7 +73,6 @@ function shortId(s, keep = 10) {
 function sanitizeEthPubkey(x) {
   const s = String(x || "").trim();
   if (!s) return null;
-  // Accept 0x… hex; do a light check only (length varies between pubkey formats across tooling)
   if (!s.startsWith("0x")) return null;
   if (s.length < 10) return null;
   return s;
@@ -101,7 +97,6 @@ function parseAvaxNodeIds(raw) {
     .split(/[\n,]+/g)
     .map(s => s.trim())
     .filter(Boolean);
-
   return tokens.filter(t => t.startsWith("NodeID-"));
 }
 
@@ -113,12 +108,12 @@ function loadFromLocalStorage() {
 
     if (ethRaw) {
       const ethList = JSON.parse(ethRaw);
-      if (Array.isArray(ethList) && ethList.length) state.eth = ethList;
+      if (Array.isArray(ethList)) state.eth = ethList;
     }
 
     if (avaxRaw) {
       const avaxList = JSON.parse(avaxRaw);
-      if (Array.isArray(avaxList) && avaxList.length) state.avax = avaxList;
+      if (Array.isArray(avaxList)) state.avax = avaxList;
     }
 
     if (ethPkRaw) {
@@ -154,89 +149,33 @@ function postJSON(path, body) {
   });
 }
 
-function renderSkeleton(gridEl, titlePrefix) {
-  gridEl.innerHTML = "";
-  for (let i = 0; i < 4; i++) {
-    const card = document.createElement("div");
-    card.className = "card skeleton";
-    card.innerHTML = `
-      <div class="card-title">${titlePrefix} ${i + 1}</div>
-      <div class="rows">
-        <div class="row"><span class="k">Loading</span><span class="v">…</span></div>
-        <div class="row"><span class="k">Loading</span><span class="v">…</span></div>
-        <div class="row"><span class="k">Loading</span><span class="v">…</span></div>
-      </div>
-    `;
-    gridEl.appendChild(card);
-  }
+function setText(node, txt) {
+  if (node) node.textContent = txt;
 }
 
-function pillClassFromStatus(status) {
-  const s = String(status || "").toLowerCase();
-  if (s.includes("active") || s.includes("online") || s.includes("validating")) return "pill-ok";
-  if (s.includes("pending") || s.includes("unknown")) return "pill-warn";
-  if (s.includes("offline") || s.includes("exited") || s.includes("slashed")) return "pill-bad";
-  return "pill-warn";
+function setHTML(node, html) {
+  if (node) node.innerHTML = html;
 }
 
-function makeCard(type, it, idx) {
-  const card = document.createElement("div");
-  card.className = "card";
+/* ===== Charts / metrics ===== */
 
-  const title = type === "eth" ? `Validator ${idx + 1}` : `Node ${idx + 1}`;
-
-  const status = it.status ?? it.validationStatus ?? "unknown";
-  const online = it.online;
-
-  const fields = (type === "eth")
-    ? [
-        ["Public Key", shortId(it.pubkey ?? "—", 18)],
-        ["Validator Index", String(it.validatorId ?? it.index ?? "—")],
-        ["Status", String(status)],
-        ["Online", online === true ? "Yes" : online === false ? "No" : "—"],
-        ["Balance (ETH)", it.balanceEth ?? "—"],
-        ["Effective (ETH)", it.effectiveBalanceEth ?? "—"],
-        ["Updated", it.updated ?? "—"],
-      ]
-    : [
-        ["NodeID", shortId(it.nodeId ?? "—", 12)],
-        ["Status", it.validationStatus ?? "—"],
-        ["Staked (AVAX)", it.amountStakedAvax ?? "—"],
-        ["Delegated (AVAX)", it.amountDelegatedAvax ?? "—"],
-        ["Delegators", it.delegatorCount ?? "—"],
-        ["Delegation Fee", it.delegationFeePct ?? "—"],
-        ["Updated", it.updated ?? "—"],
-      ];
-
-  const pillLabel = (type === "eth")
-    ? (online === true ? "ONLINE" : online === false ? "OFFLINE" : String(status).toUpperCase())
-    : String(status).toUpperCase();
-
-  const pillClass = pillClassFromStatus(type === "eth" ? (online === true ? "online" : online === false ? "offline" : status) : status);
-
-  card.innerHTML = `
-    <div class="card-top">
-      <div class="card-title">${title}</div>
-      <div class="pill ${pillClass}">${pillLabel}</div>
-    </div>
-    <div class="rows">
-      ${fields.map(([k, v]) => `<div class="row"><span class="k">${k}</span><span class="v">${v}</span></div>`).join("")}
-    </div>
-  `;
-
-  return card;
+function fmtUSD(n) {
+  const x = Number(n);
+  if (!Number.isFinite(x)) return "—";
+  const abs = Math.abs(x);
+  if (abs >= 1e12) return `$${(x / 1e12).toFixed(2)}T`;
+  if (abs >= 1e9) return `$${(x / 1e9).toFixed(2)}B`;
+  if (abs >= 1e6) return `$${(x / 1e6).toFixed(2)}M`;
+  if (abs >= 1e3) return `$${(x / 1e3).toFixed(2)}K`;
+  return `$${x.toFixed(2)}`;
 }
 
-function renderGrid(gridEl, type, items) {
-  gridEl.innerHTML = "";
-  const list = Array.isArray(items) ? items.slice(0, 4) : [];
-  for (let i = 0; i < 4; i++) {
-    const it = list[i] || {};
-    gridEl.appendChild(makeCard(type, it, i));
-  }
+function pct(n) {
+  const x = Number(n);
+  if (!Number.isFinite(x)) return "—";
+  const sign = x > 0 ? "+" : "";
+  return `${sign}${x.toFixed(2)}%`;
 }
-
-/* ===== ETH LIVE BOX (pubkey -> output + chart) ===== */
 
 function drawSparkline(canvas, series) {
   if (!canvas || !canvas.getContext) return;
@@ -257,7 +196,7 @@ function drawSparkline(canvas, series) {
   const pad = 10;
   const span = (max - min) || 1;
 
-  // faint grid
+  // grid
   ctx.globalAlpha = 0.22;
   ctx.beginPath();
   for (let i = 1; i <= 3; i++) {
@@ -297,13 +236,203 @@ function drawSparkline(canvas, series) {
   ctx.shadowBlur = 0;
 }
 
-function setText(node, txt) {
-  if (node) node.textContent = txt;
+function renderMiniMetrics(container, items) {
+  if (!container) return;
+  const xs = Array.isArray(items) ? items : [];
+  container.innerHTML = xs.map(({ k, v }) => `
+    <div class="kv-mini">
+      <div class="k">${k}</div>
+      <div class="v">${v}</div>
+    </div>
+  `).join("");
 }
 
-function setHTML(node, html) {
-  if (node) node.innerHTML = html;
+/* ===== Main panels ===== */
+
+function renderEmptyGrid(gridEl, label) {
+  if (!gridEl) return;
+  gridEl.innerHTML = "";
+  for (let i = 0; i < 4; i++) {
+    const card = document.createElement("div");
+    card.className = "card";
+    card.innerHTML = `
+      <div class="card-top">
+        <div class="card-title">${label} ${i + 1}</div>
+        <div class="pill pill-warn">EMPTY</div>
+      </div>
+      <div class="rows">
+        <div class="row"><span class="k">Add IDs</span><span class="v">Edit Mode</span></div>
+        <div class="row"><span class="k">Status</span><span class="v">—</span></div>
+        <div class="row"><span class="k">Updated</span><span class="v">—</span></div>
+      </div>
+    `;
+    gridEl.appendChild(card);
+  }
 }
+
+function pillClassFromStatus(status) {
+  const s = String(status || "").toLowerCase();
+  if (s.includes("active") || s.includes("online") || s.includes("validating")) return "pill-ok";
+  if (s.includes("pending") || s.includes("unknown")) return "pill-warn";
+  if (s.includes("offline") || s.includes("exited") || s.includes("slashed") || s.includes("error")) return "pill-bad";
+  return "pill-warn";
+}
+
+function makeCard(type, it, idx) {
+  const card = document.createElement("div");
+  card.className = "card";
+
+  const title = type === "eth" ? `Validator ${idx + 1}` : `Node ${idx + 1}`;
+
+  const status = it.status ?? it.validationStatus ?? "unknown";
+  const online = it.online;
+
+  const pillLabel = (type === "eth")
+    ? (online === true ? "ONLINE" : online === false ? "OFFLINE" : String(status).toUpperCase())
+    : String(status).toUpperCase();
+
+  const pillClass = pillClassFromStatus(type === "eth"
+    ? (online === true ? "online" : online === false ? "offline" : status)
+    : status
+  );
+
+  const fields = (type === "eth")
+    ? [
+        ["Public Key", shortId(it.pubkey ?? "—", 18)],
+        ["Index", String(it.validatorId ?? "—")],
+        ["Status", String(status ?? "—")],
+        ["Online", online === true ? "Yes" : online === false ? "No" : "—"],
+        ["Balance (ETH)", it.balanceEth ?? "—"],
+        ["Effective (ETH)", it.effectiveBalanceEth ?? "—"],
+        ["Updated", it.updated ?? "—"],
+      ]
+    : [
+        ["NodeID", shortId(it.nodeId ?? "—", 12)],
+        ["Status", it.validationStatus ?? "—"],
+        ["Staked (AVAX)", it.amountStakedAvax ?? "—"],
+        ["Delegated (AVAX)", it.amountDelegatedAvax ?? "—"],
+        ["Delegators", it.delegatorCount ?? "—"],
+        ["Delegation Fee", it.delegationFeePct ?? "—"],
+        ["Updated", it.updated ?? "—"],
+      ];
+
+  card.innerHTML = `
+    <div class="card-top">
+      <div class="card-title">${title}</div>
+      <div class="pill ${pillClass}">${pillLabel}</div>
+    </div>
+    <div class="rows">
+      ${fields.map(([k, v]) => `<div class="row"><span class="k">${k}</span><span class="v">${v}</span></div>`).join("")}
+    </div>
+  `;
+
+  return card;
+}
+
+function renderGrid(gridEl, type, items) {
+  if (!gridEl) return;
+  gridEl.innerHTML = "";
+  const list = Array.isArray(items) ? items.slice(0, 4) : [];
+  for (let i = 0; i < 4; i++) {
+    const it = list[i] || {};
+    gridEl.appendChild(makeCard(type, it, i));
+  }
+}
+
+async function refreshMainPanels() {
+  setText(el.statusLine, "Fetching…");
+  setText(el.lastUpdate, "—");
+
+  const ethPubkeys = (state.eth || []).filter(Boolean).slice(0, 4);
+  const avaxNodeIds = (state.avax || []).filter(Boolean).slice(0, 4);
+
+  if (!ethPubkeys.length) renderEmptyGrid(el.ethGrid, "Validator");
+  if (!avaxNodeIds.length) renderEmptyGrid(el.avaxGrid, "Node");
+
+  try {
+    const [ethRes, avaxRes] = await Promise.allSettled([
+      ethPubkeys.length ? postJSON("/api/eth", { pubkeys: ethPubkeys, includeBalanceSeries: false }) : Promise.resolve({ validators: [] }),
+      avaxNodeIds.length ? postJSON("/api/avax", { nodeIds: avaxNodeIds }) : Promise.resolve({ validators: [] }),
+    ]);
+
+    if (ethRes.status === "fulfilled" && ethPubkeys.length) {
+      renderGrid(el.ethGrid, "eth", ethRes.value?.validators || []);
+    }
+
+    if (avaxRes.status === "fulfilled" && avaxNodeIds.length) {
+      renderGrid(el.avaxGrid, "avax", avaxRes.value?.validators || []);
+    }
+
+    setText(el.lastUpdate, nowStamp());
+    setText(el.statusLine, "Live");
+  } catch (e) {
+    console.warn(e);
+    setText(el.statusLine, "Offline");
+  }
+}
+
+/* ===== DefiLlama TVL panels ===== */
+
+async function fetchLlama(chain) {
+  const url = new URL("/api/llama", location.origin);
+  url.searchParams.set("chain", chain);
+  const r = await fetch(url.toString());
+  if (!r.ok) {
+    const t = await r.text().catch(() => "");
+    throw new Error(`${r.status} ${r.statusText} ${t}`.trim());
+  }
+  return r.json();
+}
+
+async function refreshLlamaPanels() {
+  // ETH
+  try {
+    setText(el.ethTvlStatus, "loading…");
+    const d = await fetchLlama("Ethereum");
+    renderMiniMetrics(el.ethTvlMetrics, [
+      { k: "TVL", v: fmtUSD(d?.tvl?.current) },
+      { k: "7D Change", v: pct(d?.tvl?.change7dPct) },
+      { k: "30D Change", v: pct(d?.tvl?.change30dPct) },
+      { k: "Updated", v: d?.updated || nowStamp() },
+    ]);
+    drawSparkline(el.ethTvlChart, d?.series?.tvl30d || []);
+    setText(el.ethTvlStatus, "live");
+  } catch (e) {
+    setText(el.ethTvlStatus, "error");
+    renderMiniMetrics(el.ethTvlMetrics, [
+      { k: "Error", v: (e && e.message) ? e.message : "failed" },
+      { k: "", v: "" },
+      { k: "", v: "" },
+      { k: "", v: "" },
+    ]);
+    drawSparkline(el.ethTvlChart, []);
+  }
+
+  // AVAX (chain name in DefiLlama = "Avalanche")
+  try {
+    setText(el.avaxTvlStatus, "loading…");
+    const d = await fetchLlama("Avalanche");
+    renderMiniMetrics(el.avaxTvlMetrics, [
+      { k: "TVL", v: fmtUSD(d?.tvl?.current) },
+      { k: "7D Change", v: pct(d?.tvl?.change7dPct) },
+      { k: "30D Change", v: pct(d?.tvl?.change30dPct) },
+      { k: "Updated", v: d?.updated || nowStamp() },
+    ]);
+    drawSparkline(el.avaxTvlChart, d?.series?.tvl30d || []);
+    setText(el.avaxTvlStatus, "live");
+  } catch (e) {
+    setText(el.avaxTvlStatus, "error");
+    renderMiniMetrics(el.avaxTvlMetrics, [
+      { k: "Error", v: (e && e.message) ? e.message : "failed" },
+      { k: "", v: "" },
+      { k: "", v: "" },
+      { k: "", v: "" },
+    ]);
+    drawSparkline(el.avaxTvlChart, []);
+  }
+}
+
+/* ===== ETH live validator by pubkey ===== */
 
 async function refreshEthLive() {
   const pk = state.liveEthPubkey;
@@ -340,10 +469,10 @@ async function refreshEthLive() {
       `Balance: ${String(v.balanceEth ?? "—")} ETH`,
       `Effective: ${String(v.effectiveBalanceEth ?? "—")} ETH`,
       `Updated: ${String(v.updated ?? nowStamp())}`,
-    ].map(x => `<div>${x}</div>`).join(""));
+      v.error ? `<span class='bad'>Error:</span> ${String(v.error)}` : "",
+    ].filter(Boolean).map(x => `<div>${x}</div>`).join(""));
 
-    const series = Array.isArray(v.balanceSeriesEth) ? v.balanceSeriesEth : [];
-    drawSparkline(el.ethPkChart, series);
+    drawSparkline(el.ethPkChart, Array.isArray(v.balanceSeriesEth) ? v.balanceSeriesEth : []);
     setText(el.ethLiveStatus, "live");
   } catch (e) {
     setText(el.ethLiveStatus, "error");
@@ -352,50 +481,11 @@ async function refreshEthLive() {
   }
 }
 
-/* ===== MAIN FETCH ===== */
-
-async function refreshAll() {
-  setText(el.statusLine, "Fetching…");
-  setText(el.lastUpdate, "—");
-
-  // skeletons
-  renderSkeleton(el.ethGrid, "Validator");
-  renderSkeleton(el.avaxGrid, "Node");
-
-  try {
-    const ethPubkeys = state.eth.filter(Boolean).slice(0, 4);
-    const [ethRes, avaxRes] = await Promise.allSettled([
-      postJSON("/api/eth", { pubkeys: ethPubkeys, includeBalanceSeries: false }),
-      postJSON("/api/avax", { nodeIds: state.avax.filter(Boolean).slice(0, 4) }),
-    ]);
-
-    if (ethRes.status === "fulfilled") {
-      renderGrid(el.ethGrid, "eth", ethRes.value?.validators || []);
-    } else {
-      console.warn("ETH fetch failed:", ethRes.reason);
-      setText(el.statusLine, "ETH failed");
-    }
-
-    if (avaxRes.status === "fulfilled") {
-      renderGrid(el.avaxGrid, "avax", avaxRes.value?.validators || []);
-    } else {
-      console.warn("AVAX fetch failed:", avaxRes.reason);
-      setText(el.statusLine, "AVAX failed");
-    }
-
-    setText(el.lastUpdate, nowStamp());
-    setText(el.statusLine, "Live");
-  } catch (e) {
-    console.warn(e);
-    setText(el.statusLine, "Offline");
-  }
-}
-
-/* ===== EDIT MODE ===== */
+/* ===== Edit Mode ===== */
 
 function hydrateEditInputs() {
-  if (el.ethInput) el.ethInput.value = state.eth.join("\n");
-  if (el.avaxInput) el.avaxInput.value = state.avax.join("\n");
+  if (el.ethInput) el.ethInput.value = (state.eth || []).join("\n");
+  if (el.avaxInput) el.avaxInput.value = (state.avax || []).join("\n");
   if (el.ethPkInput) el.ethPkInput.value = state.liveEthPubkey || "";
 }
 
@@ -416,15 +506,15 @@ function bindEditMode() {
 
   if (el.saveApply) {
     el.saveApply.addEventListener("click", async () => {
-      const ethList = parseEthPubkeys(el.ethInput.value);
-      const avaxList = parseAvaxNodeIds(el.avaxInput.value);
+      const ethList = parseEthPubkeys(el.ethInput.value).slice(0, 4);
+      const avaxList = parseAvaxNodeIds(el.avaxInput.value).slice(0, 4);
 
-      state.eth = ethList.length ? ethList : [...DEFAULT_ETH_VALIDATORS];
-      state.avax = avaxList.length ? avaxList : [...DEFAULT_AVAX_NODE_IDS];
+      state.eth = ethList;
+      state.avax = avaxList;
 
       saveToLocalStorage();
       setEditMsg("Saved. Refreshing…");
-      await refreshAll();
+      await refreshMainPanels();
       setEditMsg(`Updated ${nowStamp()}`);
     });
   }
@@ -437,7 +527,7 @@ function bindEditMode() {
       saveToLocalStorage();
       hydrateEditInputs();
       setEditMsg("Reset. Refreshing…");
-      await refreshAll();
+      await refreshMainPanels();
       await refreshEthLive();
       setEditMsg(`Reset done ${nowStamp()}`);
     });
@@ -461,7 +551,7 @@ function bindEthLiveBox() {
   }
 }
 
-/* ===== BOOT ===== */
+/* ===== Boot ===== */
 
 (async function boot() {
   loadFromLocalStorage();
@@ -469,9 +559,11 @@ function bindEthLiveBox() {
   bindEditMode();
   bindEthLiveBox();
 
-  await refreshAll();
+  await refreshMainPanels();
+  await refreshLlamaPanels();
   await refreshEthLive();
 
-  setInterval(() => { refreshAll(); }, REFRESH_MS);
+  setInterval(() => { refreshMainPanels(); }, REFRESH_MS);
+  setInterval(() => { refreshLlamaPanels(); }, LLAMA_REFRESH_MS);
   setInterval(() => { refreshEthLive(); }, LIVE_REFRESH_MS);
 })();
