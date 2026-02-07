@@ -3,39 +3,22 @@
  *
  * Fetch Ethereum validator data by VALIDATOR PUBLIC KEY (0x…).
  *
- * Input (POST JSON):
+ * POST JSON:
  *   {
  *     "pubkeys": ["0xabc...", ...],
  *     "includeBalanceSeries": true|false
  *   }
  *
- * Output:
- *   { validators: [{ pubkey, validatorId, status, online, balanceEth, effectiveBalanceEth, balanceSeriesEth? }], ts }
- *
- * Data source: beaconcha.in v1 API (works on more tiers than some v2 selectors).
- * If env.BEACONCHA_IN_API_KEY exists, it will be used as Authorization Bearer header.
+ * Source: beaconcha.in v1
+ * Optional env:
+ *   BEACONCHA_IN_API_KEY (Bearer token)
  */
 
-function json(data, status = 200, extraHeaders = {}) {
+function json(data, status = 200) {
   return new Response(JSON.stringify(data), {
     status,
-    headers: {
-      "Content-Type": "application/json",
-      ...extraHeaders,
-    },
+    headers: { "Content-Type": "application/json" },
   });
-}
-
-function gweiToEth(x) {
-  const n = Number(x);
-  if (!Number.isFinite(n)) return null;
-  return n / 1e9;
-}
-
-function fmtEth(x, digits = 5) {
-  const n = Number(x);
-  if (!Number.isFinite(n)) return "—";
-  return n.toFixed(digits);
 }
 
 function sanitizePubkey(x) {
@@ -46,95 +29,80 @@ function sanitizePubkey(x) {
   return s;
 }
 
-async function readBody(request) {
-  let pubkeys = [];
-  let includeBalanceSeries = false;
-
-  if (request.method === "GET") {
-    const url = new URL(request.url);
-    const v = url.searchParams.get("pubkeys") || "";
-    includeBalanceSeries = (url.searchParams.get("includeBalanceSeries") || "") === "true";
-    pubkeys = v.split(",").map(s => s.trim()).filter(Boolean);
-  } else {
-    const body = await request.json().catch(() => ({}));
-    pubkeys = Array.isArray(body.pubkeys) ? body.pubkeys : [];
-    includeBalanceSeries = Boolean(body.includeBalanceSeries);
-  }
-
-  pubkeys = pubkeys
-    .map(sanitizePubkey)
-    .filter(Boolean);
-
-  return { pubkeys, includeBalanceSeries };
+function toNum(x) {
+  const n = Number(x);
+  return Number.isFinite(n) ? n : null;
 }
 
-async function fetchV1({ key, pubkey }) {
-  const base = "https://beaconcha.in";
+function gweiToEth(x) {
+  const n = toNum(x);
+  if (n == null) return null;
+  return n / 1e9;
+}
+
+function fmtEth(x, digits = 5) {
+  const n = Number(x);
+  if (!Number.isFinite(n)) return "—";
+  return n.toFixed(digits);
+}
+
+async function readBody(request) {
+  const body = await request.json().catch(() => ({}));
+  const pubkeys = Array.isArray(body.pubkeys) ? body.pubkeys : [];
+  const includeBalanceSeries = Boolean(body.includeBalanceSeries);
+  return {
+    pubkeys: pubkeys.map(sanitizePubkey).filter(Boolean),
+    includeBalanceSeries,
+  };
+}
+
+async function fetchV1Validator({ key, pubkey }) {
   const headers = {
-    "accept": "application/json",
-    "User-Agent": "GotNodes/1.0 (validators dashboard)",
+    accept: "application/json",
+    "User-Agent": "GotNodes/1.0",
   };
   if (key) headers.Authorization = `Bearer ${key}`;
 
-  const url = `${base}/api/v1/validator/${encodeURIComponent(pubkey)}`;
+  const url = `https://beaconcha.in/api/v1/validator/${encodeURIComponent(pubkey)}`;
   const res = await fetch(url, { headers });
-
   if (!res.ok) {
     const t = await res.text().catch(() => "");
-    throw new Error(`beaconcha validator failed: ${res.status} ${res.statusText} ${t}`.trim());
+    throw new Error(`validator fetch failed: ${res.status} ${t}`.trim());
   }
 
   const j = await res.json().catch(() => ({}));
-  // beaconcha v1 commonly returns { status: "OK", data: [...] } (sometimes data object)
-  const data = Array.isArray(j?.data) ? j.data[0] : (j?.data || null);
-  return data;
+  const data = Array.isArray(j?.data) ? j.data[0] : j?.data;
+  return data || null;
 }
 
-async function fetchBalanceSeriesV1({ key, pubkey }) {
-  const base = "https://beaconcha.in";
+async function fetchV1BalanceSeries({ key, pubkey }) {
   const headers = {
-    "accept": "application/json",
-    "User-Agent": "GotNodes/1.0 (validators dashboard)",
+    accept: "application/json",
+    "User-Agent": "GotNodes/1.0",
   };
   if (key) headers.Authorization = `Bearer ${key}`;
 
-  const url = `${base}/api/v1/validator/${encodeURIComponent(pubkey)}/balance`;
+  const url = `https://beaconcha.in/api/v1/validator/${encodeURIComponent(pubkey)}/balance`;
   const res = await fetch(url, { headers });
-
   if (!res.ok) {
     const t = await res.text().catch(() => "");
-    throw new Error(`beaconcha balance failed: ${res.status} ${res.statusText} ${t}`.trim());
+    throw new Error(`balance fetch failed: ${res.status} ${t}`.trim());
   }
 
   const j = await res.json().catch(() => ({}));
   const rows = Array.isArray(j?.data) ? j.data : [];
 
-  // rows are usually newest-first or oldest-first depending on endpoint; we just take last 30 by time
-  const parsed = rows
-    .map(r => {
-      // known fields often include balance (gwei) and effectivebalance (gwei)
-      const bal = r?.balance ?? r?.balance_gwei ?? r?.balanceWei ?? r?.balancewei ?? null;
-      const eff = r?.effectivebalance ?? r?.effective_balance ?? r?.effectiveBalance ?? null;
-      const ts = Number(r?.timestamp ?? r?.ts ?? r?.time ?? r?.day ?? 0);
-      return {
-        ts: Number.isFinite(ts) ? ts : 0,
-        balEth: gweiToEth(bal),
-        effEth: gweiToEth(eff),
-      };
-    })
-    .filter(x => x.balEth != null);
+  const parsed = rows.map(r => {
+    const bal = r?.balance ?? r?.balance_gwei ?? r?.balanceGwei ?? null;
+    const ts = toNum(r?.timestamp ?? r?.ts ?? r?.time ?? null) ?? 0;
+    return { ts, balEth: gweiToEth(bal) };
+  }).filter(x => x.balEth != null);
 
-  // sort by ts if present
   parsed.sort((a, b) => (a.ts || 0) - (b.ts || 0));
-
-  const balSeries = parsed.slice(-30).map(x => x.balEth);
-  const effSeries = parsed.slice(-30).map(x => x.effEth).filter(v => v != null);
-
-  return { balSeries, effSeries };
+  return parsed.slice(-30).map(x => x.balEth);
 }
 
-function mapValidator(v1, pubkey, balanceSeries) {
-  // Beaconcha field names vary. Try common ones.
+function mapValidator(v1, pubkey, series) {
   const idx =
     v1?.validatorindex ??
     v1?.validatorIndex ??
@@ -148,7 +116,6 @@ function mapValidator(v1, pubkey, balanceSeries) {
     v1?.validatorstatus ??
     null;
 
-  // Online is not always present in v1; if missing we leave null.
   const online =
     typeof v1?.online === "boolean" ? v1.online :
     (typeof v1?.is_online === "boolean" ? v1.is_online : null);
@@ -178,8 +145,8 @@ function mapValidator(v1, pubkey, balanceSeries) {
     updated: new Date().toLocaleString(),
   };
 
-  if (balanceSeries?.balSeries?.length) {
-    out.balanceSeriesEth = balanceSeries.balSeries.map(n => Number(n)).filter(Number.isFinite);
+  if (Array.isArray(series) && series.length) {
+    out.balanceSeriesEth = series.map(Number).filter(Number.isFinite);
   }
 
   return out;
@@ -189,6 +156,10 @@ export async function onRequest(context) {
   const { request, env } = context;
 
   try {
+    if (request.method !== "POST") {
+      return json({ error: "POST only" }, 405);
+    }
+
     const key = env.BEACONCHA_IN_API_KEY || "";
     const { pubkeys, includeBalanceSeries } = await readBody(request);
 
@@ -198,13 +169,13 @@ export async function onRequest(context) {
 
     const limited = pubkeys.slice(0, 50);
 
-    const tasks = limited.map(async (pk) => {
+    const validators = await Promise.all(limited.map(async (pk) => {
       try {
-        const v1 = await fetchV1({ key, pubkey: pk });
+        const v1 = await fetchV1Validator({ key, pubkey: pk });
         let series = null;
         if (includeBalanceSeries) {
           try {
-            series = await fetchBalanceSeriesV1({ key, pubkey: pk });
+            series = await fetchV1BalanceSeries({ key, pubkey: pk });
           } catch {
             series = null;
           }
@@ -222,9 +193,7 @@ export async function onRequest(context) {
           error: String(e?.message || e),
         };
       }
-    });
-
-    const validators = await Promise.all(tasks);
+    }));
 
     return json({ validators, ts: Date.now() }, 200);
   } catch (e) {
