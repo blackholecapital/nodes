@@ -2,11 +2,16 @@
  * GOT NODES (beta)
  * Edit Mode + localStorage
  *
- * ✅ You can still hardcode defaults here, but UI overrides via localStorage.
+ * ETH validator data is fetched by VALIDATOR PUBLIC KEY (0x…).
+ * AVAX validator data is fetched by NodeID-…
  */
 
 const DEFAULT_ETH_VALIDATORS = [
-  1, 2, 3, 4, // set decent placeholders; you'll overwrite via Edit Mode
+  // Put real 0x validator pubkeys here (or use Edit Mode)
+  "0x",
+  "0x",
+  "0x",
+  "0x",
 ];
 
 const DEFAULT_AVAX_NODE_IDS = [
@@ -18,19 +23,18 @@ const DEFAULT_AVAX_NODE_IDS = [
 
 const REFRESH_MS = 5 * 60 * 1000; // 5 minutes
 const REFRESH_LABEL = "5:00";
+const LIVE_REFRESH_MS = 10 * 1000; // "real time" feel
 
 const LS_KEYS = {
-  eth: "gotnodes.eth.validators",
+  eth: "gotnodes.eth.pubkeys",
   avax: "gotnodes.avax.nodeids",
-  trackEth: "gotnodes.track.eth",
-  trackAvax: "gotnodes.track.avax",
+  ethPk: "gotnodes.eth.live.pubkey",
 };
 
 const state = {
   eth: [...DEFAULT_ETH_VALIDATORS],
   avax: [...DEFAULT_AVAX_NODE_IDS],
-  trackEth: null,
-  trackAvax: null,
+  liveEthPubkey: null,
 };
 
 const el = {
@@ -47,21 +51,14 @@ const el = {
   avaxInput: document.getElementById("avaxInput"),
   saveApply: document.getElementById("saveApply"),
   resetDefaults: document.getElementById("resetDefaults"),
-   editMsg: document.getElementById("editMsg"),
+  editMsg: document.getElementById("editMsg"),
 
-  // network intel (DefiLlama + live track)
-  ethIntelMetrics: document.getElementById("ethIntelMetrics"),
-  avaxIntelMetrics: document.getElementById("avaxIntelMetrics"),
-  ethIntelChart: document.getElementById("ethIntelChart"),
-  avaxIntelChart: document.getElementById("avaxIntelChart"),
-  ethIntelStatus: document.getElementById("ethIntelStatus"),
-  avaxIntelStatus: document.getElementById("avaxIntelStatus"),
-  ethTrackInput: document.getElementById("ethTrackInput"),
-  avaxTrackInput: document.getElementById("avaxTrackInput"),
-  ethTrackApply: document.getElementById("ethTrackApply"),
-  avaxTrackApply: document.getElementById("avaxTrackApply"),
-  ethTrackOut: document.getElementById("ethTrackOut"),
-  avaxTrackOut: document.getElementById("avaxTrackOut"),
+  // ETH live-by-pubkey box
+  ethLiveStatus: document.getElementById("ethLiveStatus"),
+  ethPkInput: document.getElementById("ethPkInput"),
+  ethPkApply: document.getElementById("ethPkApply"),
+  ethPkOut: document.getElementById("ethPkOut"),
+  ethPkChart: document.getElementById("ethPkChart"),
 };
 
 el.refreshEvery.textContent = REFRESH_LABEL;
@@ -70,58 +67,64 @@ function nowStamp() {
   return new Date().toLocaleString();
 }
 
-function parseEthIds(raw) {
-  // accept lines and commas; keep numeric-ish tokens
+function shortId(s, keep = 10) {
+  const x = String(s || "");
+  if (x.length <= keep + 6) return x;
+  return `${x.slice(0, keep)}…${x.slice(-4)}`;
+}
+
+function sanitizeEthPubkey(x) {
+  const s = String(x || "").trim();
+  if (!s) return null;
+  // Accept 0x… hex; do a light check only (length varies between pubkey formats across tooling)
+  if (!s.startsWith("0x")) return null;
+  if (s.length < 10) return null;
+  return s;
+}
+
+function parseEthPubkeys(raw) {
   const tokens = String(raw || "")
     .split(/[\n,]+/g)
     .map(s => s.trim())
     .filter(Boolean);
 
-  const nums = [];
+  const out = [];
   for (const t of tokens) {
-    // allow "12345" or " 12345 "
-    const n = Number(t);
-    if (Number.isInteger(n) && n >= 0) nums.push(n);
+    const k = sanitizeEthPubkey(t);
+    if (k) out.push(k);
   }
-  return nums;
+  return out;
 }
 
 function parseAvaxNodeIds(raw) {
-  // one per line (also tolerate commas)
   const tokens = String(raw || "")
     .split(/[\n,]+/g)
     .map(s => s.trim())
     .filter(Boolean);
 
-  // basic sanity: keep things that look like NodeID-...
   return tokens.filter(t => t.startsWith("NodeID-"));
 }
 
 function loadFromLocalStorage() {
   try {
     const ethRaw = localStorage.getItem(LS_KEYS.eth);
-       const avaxRaw = localStorage.getItem(LS_KEYS.avax);
-    const trackEthRaw = localStorage.getItem(LS_KEYS.trackEth);
-    const trackAvaxRaw = localStorage.getItem(LS_KEYS.trackAvax);
+    const avaxRaw = localStorage.getItem(LS_KEYS.avax);
+    const ethPkRaw = localStorage.getItem(LS_KEYS.ethPk);
 
     if (ethRaw) {
       const ethList = JSON.parse(ethRaw);
       if (Array.isArray(ethList) && ethList.length) state.eth = ethList;
     }
-       if (avaxRaw) {
+
+    if (avaxRaw) {
       const avaxList = JSON.parse(avaxRaw);
       if (Array.isArray(avaxList) && avaxList.length) state.avax = avaxList;
     }
 
-    if (trackEthRaw) {
-      const v = Number(trackEthRaw);
-      if (Number.isInteger(v) && v >= 0) state.trackEth = v;
+    if (ethPkRaw) {
+      const k = sanitizeEthPubkey(ethPkRaw);
+      if (k) state.liveEthPubkey = k;
     }
-    if (trackAvaxRaw) {
-      const v = String(trackAvaxRaw).trim();
-      if (v) state.trackAvax = v;
-    }
-
   } catch (e) {
     console.warn("localStorage load failed:", e);
   }
@@ -130,52 +133,112 @@ function loadFromLocalStorage() {
 function saveToLocalStorage() {
   try {
     localStorage.setItem(LS_KEYS.eth, JSON.stringify(state.eth));
-       localStorage.setItem(LS_KEYS.avax, JSON.stringify(state.avax));
-    if (state.trackEth != null) localStorage.setItem(LS_KEYS.trackEth, String(state.trackEth));
-    if (state.trackAvax) localStorage.setItem(LS_KEYS.trackAvax, String(state.trackAvax));
+    localStorage.setItem(LS_KEYS.avax, JSON.stringify(state.avax));
+    if (state.liveEthPubkey) localStorage.setItem(LS_KEYS.ethPk, String(state.liveEthPubkey));
   } catch (e) {
     console.warn("localStorage save failed:", e);
   }
 }
 
-function hydrateEditInputs() {
-  el.ethInput.value = state.eth.join("\n");
-   el.avaxInput.value = state.avax.join("\n");
-  if (el.ethTrackInput) el.ethTrackInput.value = state.trackEth != null ? String(state.trackEth) : "";
-  if (el.avaxTrackInput) el.avaxTrackInput.value = state.trackAvax ? String(state.trackAvax) : "";
+function postJSON(path, body) {
+  return fetch(path, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body || {}),
+  }).then(async (r) => {
+    if (!r.ok) {
+      const t = await r.text().catch(() => "");
+      throw new Error(`${r.status} ${r.statusText} ${t}`.trim());
+    }
+    return r.json();
+  });
 }
 
-function setEditMsg(msg) {
-  el.editMsg.textContent = msg;
+function renderSkeleton(gridEl, titlePrefix) {
+  gridEl.innerHTML = "";
+  for (let i = 0; i < 4; i++) {
+    const card = document.createElement("div");
+    card.className = "card skeleton";
+    card.innerHTML = `
+      <div class="card-title">${titlePrefix} ${i + 1}</div>
+      <div class="rows">
+        <div class="row"><span class="k">Loading</span><span class="v">…</span></div>
+        <div class="row"><span class="k">Loading</span><span class="v">…</span></div>
+        <div class="row"><span class="k">Loading</span><span class="v">…</span></div>
+      </div>
+    `;
+    gridEl.appendChild(card);
+  }
 }
 
-function pillClassFromStatus(s) {
-  const st = String(s || "").toLowerCase();
-  if (st.includes("active") || st === "ok" || st === "online") return "ok";
-  if (st.includes("pending") || st.includes("unknown")) return "warn";
-  if (st.includes("slashed") || st.includes("offline") || st.includes("removed")) return "bad";
-  return "warn";
+function pillClassFromStatus(status) {
+  const s = String(status || "").toLowerCase();
+  if (s.includes("active") || s.includes("online") || s.includes("validating")) return "pill-ok";
+  if (s.includes("pending") || s.includes("unknown")) return "pill-warn";
+  if (s.includes("offline") || s.includes("exited") || s.includes("slashed")) return "pill-bad";
+  return "pill-warn";
 }
 
-function shortId(id, keep = 10) {
-  const s = String(id);
-  if (s.length <= keep * 2 + 3) return s;
-  return `${s.slice(0, keep)}…${s.slice(-keep)}`;
+function makeCard(type, it, idx) {
+  const card = document.createElement("div");
+  card.className = "card";
+
+  const title = type === "eth" ? `Validator ${idx + 1}` : `Node ${idx + 1}`;
+
+  const status = it.status ?? it.validationStatus ?? "unknown";
+  const online = it.online;
+
+  const fields = (type === "eth")
+    ? [
+        ["Public Key", shortId(it.pubkey ?? "—", 18)],
+        ["Validator Index", String(it.validatorId ?? it.index ?? "—")],
+        ["Status", String(status)],
+        ["Online", online === true ? "Yes" : online === false ? "No" : "—"],
+        ["Balance (ETH)", it.balanceEth ?? "—"],
+        ["Effective (ETH)", it.effectiveBalanceEth ?? "—"],
+        ["Updated", it.updated ?? "—"],
+      ]
+    : [
+        ["NodeID", shortId(it.nodeId ?? "—", 12)],
+        ["Status", it.validationStatus ?? "—"],
+        ["Staked (AVAX)", it.amountStakedAvax ?? "—"],
+        ["Delegated (AVAX)", it.amountDelegatedAvax ?? "—"],
+        ["Delegators", it.delegatorCount ?? "—"],
+        ["Delegation Fee", it.delegationFeePct ?? "—"],
+        ["Updated", it.updated ?? "—"],
+      ];
+
+  const pillLabel = (type === "eth")
+    ? (online === true ? "ONLINE" : online === false ? "OFFLINE" : String(status).toUpperCase())
+    : String(status).toUpperCase();
+
+  const pillClass = pillClassFromStatus(type === "eth" ? (online === true ? "online" : online === false ? "offline" : status) : status);
+
+  card.innerHTML = `
+    <div class="card-top">
+      <div class="card-title">${title}</div>
+      <div class="pill ${pillClass}">${pillLabel}</div>
+    </div>
+    <div class="rows">
+      ${fields.map(([k, v]) => `<div class="row"><span class="k">${k}</span><span class="v">${v}</span></div>`).join("")}
+    </div>
+  `;
+
+  return card;
 }
 
-// ===== NETWORK INTEL (DefiLlama) =====
-function fmtUSD(n) {
-  const x = Number(n);
-  if (!Number.isFinite(x)) return "—";
-  const abs = Math.abs(x);
-  if (abs >= 1e12) return `$${(x / 1e12).toFixed(2)}T`;
-  if (abs >= 1e9) return `$${(x / 1e9).toFixed(2)}B`;
-  if (abs >= 1e6) return `$${(x / 1e6).toFixed(2)}M`;
-  if (abs >= 1e3) return `$${(x / 1e3).toFixed(2)}K`;
-  return `$${x.toFixed(2)}`;
+function renderGrid(gridEl, type, items) {
+  gridEl.innerHTML = "";
+  const list = Array.isArray(items) ? items.slice(0, 4) : [];
+  for (let i = 0; i < 4; i++) {
+    const it = list[i] || {};
+    gridEl.appendChild(makeCard(type, it, i));
+  }
 }
 
-function drawSparkline(canvas, series, opts = {}) {
+/* ===== ETH LIVE BOX (pubkey -> output + chart) ===== */
+
+function drawSparkline(canvas, series) {
   if (!canvas || !canvas.getContext) return;
   const ctx = canvas.getContext("2d");
   const w = canvas.width || 320;
@@ -194,7 +257,7 @@ function drawSparkline(canvas, series, opts = {}) {
   const pad = 10;
   const span = (max - min) || 1;
 
-  // backdrop grid
+  // faint grid
   ctx.globalAlpha = 0.22;
   ctx.beginPath();
   for (let i = 1; i <= 3; i++) {
@@ -206,6 +269,7 @@ function drawSparkline(canvas, series, opts = {}) {
   ctx.lineWidth = 1;
   ctx.stroke();
 
+  // line
   ctx.globalAlpha = 1;
   ctx.beginPath();
   pts.forEach((v, i) => {
@@ -214,391 +278,200 @@ function drawSparkline(canvas, series, opts = {}) {
     if (i === 0) ctx.moveTo(x, y);
     else ctx.lineTo(x, y);
   });
-
   ctx.lineWidth = 2;
-  ctx.strokeStyle = opts.stroke || "rgba(0,255,170,0.9)";
+  ctx.strokeStyle = "rgba(0,255,170,0.9)";
   ctx.shadowColor = "rgba(0,0,0,0.35)";
   ctx.shadowBlur = 6;
   ctx.stroke();
+  ctx.shadowBlur = 0;
 
-  // last point glow
+  // last point
   const last = pts[pts.length - 1];
   const lx = w - pad;
   const ly = pad + (1 - (last - min) / span) * (h - pad * 2);
   ctx.beginPath();
   ctx.arc(lx, ly, 3, 0, Math.PI * 2);
-  ctx.fillStyle = opts.fill || "rgba(0,255,170,0.95)";
+  ctx.fillStyle = "rgba(0,255,170,0.95)";
   ctx.shadowBlur = 10;
   ctx.fill();
   ctx.shadowBlur = 0;
 }
 
-function renderIntelMetrics(container, data) {
-  if (!container) return;
-  const items = Array.isArray(data) ? data : [];
-  container.innerHTML = items.map(({ k, v }) => `
-    <div class="kv-mini">
-      <div class="k">${k}</div>
-      <div class="v">${v}</div>
-    </div>
-  `).join("");
+function setText(node, txt) {
+  if (node) node.textContent = txt;
 }
 
-async function fetchIntel(chain) {
-  const url = new URL("/api/llama", location.origin);
-  url.searchParams.set("chain", chain);
-  return fetch(url.toString()).then(r => r.json());
+function setHTML(node, html) {
+  if (node) node.innerHTML = html;
 }
 
-function safeText(elm, txt) {
-  if (elm) elm.textContent = txt;
-}
+async function refreshEthLive() {
+  const pk = state.liveEthPubkey;
+  if (!pk) {
+    setText(el.ethLiveStatus, "idle");
+    setText(el.ethPkOut, "—");
+    drawSparkline(el.ethPkChart, []);
+    return;
+  }
 
-function renderTrackedOut(elm, lines) {
-  if (!elm) return;
-  elm.innerHTML = (Array.isArray(lines) ? lines : [])
-    .map(l => `<div>${l}</div>`)
-    .join("") || "—";
-}
-// ===== /NETWORK INTEL (DefiLlama) =====
+  try {
+    setText(el.ethLiveStatus, "fetching…");
+    const r = await postJSON("/api/eth", { pubkeys: [pk], includeBalanceSeries: true });
+    const v = (r?.validators || [])[0];
 
-function renderSkeleton(gridEl, titlePrefix) {
-  gridEl.innerHTML = "";
-  for (let i = 0; i < 4; i++) {
-    const card = document.createElement("div");
-    card.className = "card skel";
-    card.innerHTML = `
-      <div class="card-top">
-        <div>
-          <h3 class="card-title">${titlePrefix} ${i + 1}</h3>
-          <div class="card-sub">Loading…</div>
-        </div>
-        <div class="pill">WAIT</div>
-      </div>
-      <div class="kv">
-        ${Array.from({ length: 8 }).map(() => `
-          <div class="kv-row">
-            <div class="k">…</div>
-            <div class="v">…</div>
-          </div>
-        `).join("")}
-      </div>
-    `;
-    gridEl.appendChild(card);
+    if (!v) {
+      setText(el.ethLiveStatus, "no data");
+      setText(el.ethPkOut, "No data returned.");
+      drawSparkline(el.ethPkChart, []);
+      return;
+    }
+
+    const onlineLabel = v.online === true
+      ? "<span class='ok'>ONLINE</span>"
+      : v.online === false
+      ? "<span class='bad'>OFFLINE</span>"
+      : "<span class='warn'>UNKNOWN</span>";
+
+    setHTML(el.ethPkOut, [
+      `Pubkey: <span class='ok'>${shortId(v.pubkey || pk, 22)}</span>`,
+      `Index: <span class='ok'>${String(v.validatorId ?? "—")}</span>`,
+      `Status: ${String(v.status ?? "—")}`,
+      `Online: ${onlineLabel}`,
+      `Balance: ${String(v.balanceEth ?? "—")} ETH`,
+      `Effective: ${String(v.effectiveBalanceEth ?? "—")} ETH`,
+      `Updated: ${String(v.updated ?? nowStamp())}`,
+    ].map(x => `<div>${x}</div>`).join(""));
+
+    const series = Array.isArray(v.balanceSeriesEth) ? v.balanceSeriesEth : [];
+    drawSparkline(el.ethPkChart, series);
+    setText(el.ethLiveStatus, "live");
+  } catch (e) {
+    setText(el.ethLiveStatus, "error");
+    setText(el.ethPkOut, `Error: ${e.message}`);
+    drawSparkline(el.ethPkChart, []);
   }
 }
 
-function renderCards(gridEl, items, type) {
-  gridEl.innerHTML = "";
-
-  const take4 = (Array.isArray(items) ? items : []).slice(0, 4);
-
-  take4.forEach((it, idx) => {
-    const card = document.createElement("div");
-    card.className = "card";
-
-    const title = type === "eth" ? `Validator ${idx + 1}` : `Node ${idx + 1}`;
-    const idLine = type === "eth"
-      ? String(it.validatorId ?? it.index ?? "—")
-      : String(it.nodeId ?? "—");
-
-    const status = it.status ?? it.validationStatus ?? "unknown";
-    const online = it.online;
-
-    const fields = (type === "eth")
-      ? [
-          ["Validator ID", idLine],
-          ["Status", status],
-          ["Online", online === true ? "Yes" : online === false ? "No" : "—"],
-          ["Balance (ETH)", it.balanceEth ?? "—"],
-          ["Effective (ETH)", it.effectiveBalanceEth ?? "—"],
-          ["APY (30d)", it.apy30d ?? "—"],
-          ["ROI (30d)", it.roi30d ?? "—"],
-          ["Finality", it.finality ?? "—"],
-        ]
-      : [
-          ["NodeID", shortId(it.nodeId ?? "—", 12)],
-          ["Status", it.validationStatus ?? "—"],
-          ["Staked (AVAX)", it.amountStakedAvax ?? "—"],
-          ["Delegated (AVAX)", it.amountDelegatedAvax ?? "—"],
-          ["Delegators", it.delegatorCount ?? "—"],
-          ["Delegation Fee", it.delegationFeePct ?? "—"],
-          ["Val Reward (AVAX)", it.validationRewardAvax ?? "—"],
-          ["Del Reward (AVAX)", it.delegationRewardAvax ?? "—"],
-        ];
-
-    const pillLabel = (type === "eth")
-      ? (online === true ? "ONLINE" : online === false ? "OFFLINE" : String(status).toUpperCase())
-      : String(status).toUpperCase();
-
-    const pillStatusKey = type === "eth"
-      ? (online === true ? "online" : online === false ? "offline" : status)
-      : status;
-
-    card.innerHTML = `
-      <div class="card-top">
-        <div>
-          <h3 class="card-title">${title}</h3>
-          <div class="card-sub">${type === "eth" ? "ID: " : "NodeID: "}${idLine}</div>
-        </div>
-        <div class="pill ${pillClassFromStatus(pillStatusKey)}">${pillLabel}</div>
-      </div>
-
-      <div class="kv">
-        ${fields.map(([k, v]) => `
-          <div class="kv-row">
-            <div class="k">${k}</div>
-            <div class="v ${k.includes("APY") ? "green" : ""}">${v}</div>
-          </div>
-        `).join("")}
-      </div>
-    `;
-
-    gridEl.appendChild(card);
-  });
-}
-
-async function postJSON(url, body) {
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    throw new Error(`${url} failed: ${res.status} ${res.statusText} ${text}`.trim());
-  }
-  return res.json();
-}
+/* ===== MAIN FETCH ===== */
 
 async function refreshAll() {
-  el.statusLine.textContent = "Fetching validator telemetry…";
-  renderSkeleton(el.ethGrid, "ETH");
-  renderSkeleton(el.avaxGrid, "AVAX");
+  setText(el.statusLine, "Fetching…");
+  setText(el.lastUpdate, "—");
 
-  // only show first 4 on UI, but backend can accept more if you want later
-  const ethIds = state.eth.slice(0, 4);
-  const avaxIds = state.avax.slice(0, 4);
+  // skeletons
+  renderSkeleton(el.ethGrid, "Validator");
+  renderSkeleton(el.avaxGrid, "Node");
 
-  const results = await Promise.allSettled([
-    postJSON("/api/eth", { validators: ethIds, window: "30d" }),
-    postJSON("/api/avax", { nodeIds: avaxIds }),
-  ]);
+  try {
+    const ethPubkeys = state.eth.filter(Boolean).slice(0, 4);
+    const [ethRes, avaxRes] = await Promise.allSettled([
+      postJSON("/api/eth", { pubkeys: ethPubkeys, includeBalanceSeries: false }),
+      postJSON("/api/avax", { nodeIds: state.avax.filter(Boolean).slice(0, 4) }),
+    ]);
 
-  const eth = results[0].status === "fulfilled" ? results[0].value : null;
-  const avax = results[1].status === "fulfilled" ? results[1].value : null;
+    if (ethRes.status === "fulfilled") {
+      renderGrid(el.ethGrid, "eth", ethRes.value?.validators || []);
+    } else {
+      console.warn("ETH fetch failed:", ethRes.reason);
+      setText(el.statusLine, "ETH failed");
+    }
 
-  if (eth) renderCards(el.ethGrid, eth.validators || [], "eth");
-  if (avax) renderCards(el.avaxGrid, avax.validators || [], "avax");
+    if (avaxRes.status === "fulfilled") {
+      renderGrid(el.avaxGrid, "avax", avaxRes.value?.validators || []);
+    } else {
+      console.warn("AVAX fetch failed:", avaxRes.reason);
+      setText(el.statusLine, "AVAX failed");
+    }
 
-  el.lastUpdate.textContent = nowStamp();
-
-  const errs = [];
-  if (!eth) errs.push(`ETH: ${String(results[0].reason || "failed")}`);
-  if (!avax) errs.push(`AVAX: ${String(results[1].reason || "failed")}`);
-  if (errs.length) {
-    el.statusLine.textContent = `Partial: ${errs.join(" | ")}`;
-  } else {
-    el.statusLine.textContent = "Locked. Loaded. Updating on schedule.";
+    setText(el.lastUpdate, nowStamp());
+    setText(el.statusLine, "Live");
+  } catch (e) {
+    console.warn(e);
+    setText(el.statusLine, "Offline");
   }
+}
+
+/* ===== EDIT MODE ===== */
+
+function hydrateEditInputs() {
+  if (el.ethInput) el.ethInput.value = state.eth.join("\n");
+  if (el.avaxInput) el.avaxInput.value = state.avax.join("\n");
+  if (el.ethPkInput) el.ethPkInput.value = state.liveEthPubkey || "";
+}
+
+function setEditMsg(msg) {
+  if (el.editMsg) el.editMsg.textContent = msg;
+}
 
 function bindEditMode() {
-  if (!el.toggleEdit) return; // safety
+  if (!el.toggleEdit) return;
 
   el.toggleEdit.addEventListener("click", () => {
-    const isOpen = !el.editPanel.hidden;
-    el.editPanel.hidden = isOpen;
-    el.toggleEdit.textContent = isOpen ? "OPEN" : "CLOSE";
-    el.toggleEdit.setAttribute("aria-expanded", String(!isOpen));
-    setEditMsg(isOpen ? "—" : "Paste IDs, SAVE + APPLY.");
+    const open = el.editPanel.hasAttribute("hidden");
+    if (open) el.editPanel.removeAttribute("hidden");
+    else el.editPanel.setAttribute("hidden", "");
+    el.toggleEdit.setAttribute("aria-expanded", open ? "true" : "false");
+    el.toggleEdit.textContent = open ? "CLOSE" : "OPEN";
   });
 
-  el.saveApply.addEventListener("click", async () => {
-    const ethList = parseEthIds(el.ethInput.value);
-    const avaxList = parseAvaxNodeIds(el.avaxInput.value);
+  if (el.saveApply) {
+    el.saveApply.addEventListener("click", async () => {
+      const ethList = parseEthPubkeys(el.ethInput.value);
+      const avaxList = parseAvaxNodeIds(el.avaxInput.value);
 
-    if (ethList.length < 1) {
-      setEditMsg("ETH list looks empty. Paste validator indices (numbers).");
-      return;
-    }
-    if (avaxList.length < 1) {
-      setEditMsg("AVAX list looks empty. Paste NodeID-… lines.");
-      return;
-    }
+      state.eth = ethList.length ? ethList : [...DEFAULT_ETH_VALIDATORS];
+      state.avax = avaxList.length ? avaxList : [...DEFAULT_AVAX_NODE_IDS];
 
-    state.eth = ethList;
-    state.avax = avaxList;
-    saveToLocalStorage();
-
-    setEditMsg(`Saved. Applying now (${Math.min(4, ethList.length)} ETH / ${Math.min(4, avaxList.length)} AVAX)…`);
-    try {
-      await refreshAll();
-      setEditMsg(`Applied ✅ ${nowStamp()}`);
-    } catch (e) {
-      console.error(e);
-      setEditMsg(`Applied, but fetch failed: ${e.message}`);
-      el.statusLine.textContent = `Error: ${e.message}`;
-    }
-  });
-
-  el.resetDefaults.addEventListener("click", async () => {
-    state.eth = [...DEFAULT_ETH_VALIDATORS];
-    state.avax = [...DEFAULT_AVAX_NODE_IDS];
-    saveToLocalStorage();
-    hydrateEditInputs();
-    setEditMsg("Reset to defaults. Applying…");
-    try {
-      await refreshAll();
-      setEditMsg(`Defaults applied ✅ ${nowStamp()}`);
-    } catch (e) {
-      console.error(e);
-      setEditMsg(`Defaults applied, but fetch failed: ${e.message}`);
-      el.statusLine.textContent = `Error: ${e.message}`;
-    }
-  });
-}
-
-function bindIntelAndTracking() {
-  if (el.ethTrackApply && el.ethTrackInput) {
-    el.ethTrackApply.addEventListener("click", async () => {
-      const v = Number(el.ethTrackInput.value.trim());
-      if (!Number.isInteger(v) || v < 0) {
-        renderTrackedOut(el.ethTrackOut, ["<span class='warn'>Enter a valid validator index (number).</span>"]);
-        return;
-      }
-      state.trackEth = v;
       saveToLocalStorage();
-      await refreshTracked();
+      setEditMsg("Saved. Refreshing…");
+      await refreshAll();
+      setEditMsg(`Updated ${nowStamp()}`);
     });
   }
 
-  if (el.avaxTrackApply && el.avaxTrackInput) {
-    el.avaxTrackApply.addEventListener("click", async () => {
-      const v = String(el.avaxTrackInput.value || "").trim();
-      if (!v || !v.startsWith("NodeID-")) {
-        renderTrackedOut(el.avaxTrackOut, ["<span class='warn'>Enter a valid NodeID-…</span>"]);
-        return;
-      }
-      state.trackAvax = v;
+  if (el.resetDefaults) {
+    el.resetDefaults.addEventListener("click", async () => {
+      state.eth = [...DEFAULT_ETH_VALIDATORS];
+      state.avax = [...DEFAULT_AVAX_NODE_IDS];
+      state.liveEthPubkey = null;
       saveToLocalStorage();
-      await refreshTracked();
+      hydrateEditInputs();
+      setEditMsg("Reset. Refreshing…");
+      await refreshAll();
+      await refreshEthLive();
+      setEditMsg(`Reset done ${nowStamp()}`);
     });
   }
 }
 
-async function refreshIntel() {
-  try {
-    safeText(el.ethIntelStatus, "fetching…");
-    const eth = await fetchIntel("Ethereum");
-    const ethSeries = eth?.series?.tvl30d || eth?.series?.fees30d || [];
-    renderIntelMetrics(el.ethIntelMetrics, [
-      { k: "TVL", v: fmtUSD(eth?.tvl?.current) },
-      { k: "Fees (24h)", v: fmtUSD(eth?.fees?.totalFees24h) },
-      { k: "Revenue (24h)", v: fmtUSD(eth?.fees?.totalRevenue24h) },
-      { k: "Stablecoin Dom", v: eth?.stablecoins?.dominance != null ? `${(Number(eth.stablecoins.dominance) * 100).toFixed(2)}%` : "—" },
-    ]);
-    drawSparkline(el.ethIntelChart, ethSeries);
-    safeText(el.ethIntelStatus, "live");
-  } catch (e) {
-    console.warn("ETH intel failed:", e);
-    safeText(el.ethIntelStatus, "offline");
-  }
-
-  try {
-    safeText(el.avaxIntelStatus, "fetching…");
-    const avax = await fetchIntel("Avalanche");
-    const avaxSeries = avax?.series?.tvl30d || avax?.series?.fees30d || [];
-    renderIntelMetrics(el.avaxIntelMetrics, [
-      { k: "TVL", v: fmtUSD(avax?.tvl?.current) },
-      { k: "Fees (24h)", v: fmtUSD(avax?.fees?.totalFees24h) },
-      { k: "Revenue (24h)", v: fmtUSD(avax?.fees?.totalRevenue24h) },
-      { k: "Stablecoin Dom", v: avax?.stablecoins?.dominance != null ? `${(Number(avax.stablecoins.dominance) * 100).toFixed(2)}%` : "—" },
-    ]);
-    drawSparkline(el.avaxIntelChart, avaxSeries);
-    safeText(el.avaxIntelStatus, "live");
-  } catch (e) {
-    console.warn("AVAX intel failed:", e);
-    safeText(el.avaxIntelStatus, "offline");
+function bindEthLiveBox() {
+  if (el.ethPkApply && el.ethPkInput) {
+    el.ethPkApply.addEventListener("click", async () => {
+      const pk = sanitizeEthPubkey(el.ethPkInput.value);
+      if (!pk) {
+        setText(el.ethLiveStatus, "invalid");
+        setText(el.ethPkOut, "Enter a valid 0x… public key.");
+        drawSparkline(el.ethPkChart, []);
+        return;
+      }
+      state.liveEthPubkey = pk;
+      saveToLocalStorage();
+      await refreshEthLive();
+    });
   }
 }
 
-async function refreshTracked() {
-  if (state.trackEth != null && el.ethTrackOut) {
-    try {
-      const r = await postJSON("/api/eth", { validators: [state.trackEth], window: "30d" });
-      const v = (r?.validators || [])[0];
-      if (!v) {
-        renderTrackedOut(el.ethTrackOut, ["No data"]);
-      } else {
-        const online = v.online === true ? "<span class='ok'>ONLINE</span>" : v.online === false ? "<span class='bad'>OFFLINE</span>" : "<span class='warn'>UNKNOWN</span>";
-        renderTrackedOut(el.ethTrackOut, [
-          `ID: <span class='ok'>${v.validatorId ?? state.trackEth}</span>`,
-          `Status: ${String(v.status ?? "—")}`,
-          `Online: ${online}`,
-          `Balance: ${String(v.balanceEth ?? "—")} ETH`,
-          `Effective: ${String(v.effectiveBalanceEth ?? "—")} ETH`,
-          `APY (30d): ${String(v.apy30d ?? "—")}`,
-          `ROI (30d): ${String(v.roi30d ?? "—")}`,
-          `Updated: ${nowStamp()}`,
-        ]);
-      }
-    } catch (e) {
-      renderTrackedOut(el.ethTrackOut, [`<span class='bad'>Error:</span> ${e.message}`]);
-    }
-  }
-
-  if (state.trackAvax && el.avaxTrackOut) {
-    try {
-      const r = await postJSON("/api/avax", { nodeIds: [state.trackAvax] });
-      const v = (r?.validators || [])[0];
-      if (!v) {
-        renderTrackedOut(el.avaxTrackOut, ["No data"]);
-      } else {
-        const st = String(v.validationStatus || "unknown");
-        const klass = pillClassFromStatus(st);
-        renderTrackedOut(el.avaxTrackOut, [
-          `NodeID: <span class='ok'>${shortId(state.trackAvax, 14)}</span>`,
-          `Status: <span class='${klass}'>${st.toUpperCase()}</span>`,
-          `Staked: ${String(v.amountStakedAvax ?? "—")} AVAX`,
-          `Delegated: ${String(v.amountDelegatedAvax ?? "—")} AVAX`,
-          `Delegators: ${String(v.delegatorCount ?? "—")}`,
-          `Fee: ${String(v.delegationFeePct ?? "—")}`,
-          `Updated: ${nowStamp()}`,
-        ]);
-      }
-    } catch (e) {
-      renderTrackedOut(el.avaxTrackOut, [`<span class='bad'>Error:</span> ${e.message}`]);
-    }
-  }
-}
+/* ===== BOOT ===== */
 
 (async function boot() {
   loadFromLocalStorage();
   hydrateEditInputs();
-   bindEditMode();
-  bindIntelAndTracking();
+  bindEditMode();
+  bindEthLiveBox();
 
-  // fire sidebar immediately (non-blocking)
-  refreshIntel();
-  refreshTracked();
+  await refreshAll();
+  await refreshEthLive();
 
-  try {
-    await refreshAll();
-  } catch (e) {
-    console.error(e);
-    el.statusLine.textContent = `Error: ${e.message}`;
-  }
-
-  setInterval(async () => {
-    try {
-      await refreshAll();
-    } catch (e) {
-      console.error(e);
-      el.statusLine.textContent = `Error: ${e.message}`;
-    }
-   }, REFRESH_MS);
-
-  // near-real-time tracking (15s) + intel refresh (60s)
-  setInterval(() => { refreshTracked(); }, 15 * 1000);
-  setInterval(() => { refreshIntel(); }, 60 * 1000);
+  setInterval(() => { refreshAll(); }, REFRESH_MS);
+  setInterval(() => { refreshEthLive(); }, LIVE_REFRESH_MS);
 })();
