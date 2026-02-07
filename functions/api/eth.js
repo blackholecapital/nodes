@@ -1,16 +1,19 @@
 /**
  * /api/eth
  *
- * Beaconcha.in has multiple API surfaces and (depending on plan) some v2 "selector" types
- * are restricted. Your error:
- *   "validator selector type not allowed for your subscription tier"
+ * Fetch Ethereum validator data by VALIDATOR PUBLIC KEY (0x…).
  *
- * This function:
- *  1) Tries the v2 batch endpoints (fast, richer).
- *  2) If Beaconcha rejects the selector type (or other auth/plan issues), falls back to
- *     per-validator v1 calls that work on more tiers.
+ * Input (POST JSON):
+ *   {
+ *     "pubkeys": ["0xabc...", ...],
+ *     "includeBalanceSeries": true|false
+ *   }
  *
- * Output shape stays stable for the frontend.
+ * Output:
+ *   { validators: [{ pubkey, validatorId, status, online, balanceEth, effectiveBalanceEth, balanceSeriesEth? }], ts }
+ *
+ * Data source: beaconcha.in v1 API (works on more tiers than some v2 selectors).
+ * If env.BEACONCHA_IN_API_KEY exists, it will be used as Authorization Bearer header.
  */
 
 function json(data, status = 200, extraHeaders = {}) {
@@ -21,13 +24,6 @@ function json(data, status = 200, extraHeaders = {}) {
       ...extraHeaders,
     },
   });
-}
-
-function isSelectorTierError(text = "") {
-  const t = String(text).toLowerCase();
-  return t.includes("validator selector type not allowed") ||
-         t.includes("subscription tier") ||
-         t.includes("upgrade your subscription");
 }
 
 function gweiToEth(x) {
@@ -42,271 +38,196 @@ function fmtEth(x, digits = 5) {
   return n.toFixed(digits);
 }
 
+function sanitizePubkey(x) {
+  const s = String(x || "").trim();
+  if (!s) return null;
+  if (!s.startsWith("0x")) return null;
+  if (s.length < 10) return null;
+  return s;
+}
+
 async function readBody(request) {
-  let validators = [];
-  let window = "30d";
+  let pubkeys = [];
+  let includeBalanceSeries = false;
 
   if (request.method === "GET") {
     const url = new URL(request.url);
-    const v = url.searchParams.get("validators") || "";
-    window = url.searchParams.get("window") || "30d";
-    validators = v
-      .split(",")
-      .map(x => x.trim())
-      .filter(Boolean)
-      .map(x => Number(x))
-      .filter(n => Number.isInteger(n));
+    const v = url.searchParams.get("pubkeys") || "";
+    includeBalanceSeries = (url.searchParams.get("includeBalanceSeries") || "") === "true";
+    pubkeys = v.split(",").map(s => s.trim()).filter(Boolean);
   } else {
     const body = await request.json().catch(() => ({}));
-    validators = Array.isArray(body.validators) ? body.validators : [];
-    window = body.window || "30d";
+    pubkeys = Array.isArray(body.pubkeys) ? body.pubkeys : [];
+    includeBalanceSeries = Boolean(body.includeBalanceSeries);
   }
 
-  // clamp / sanitize
-  validators = validators
-    .map(n => Number(n))
-    .filter(n => Number.isInteger(n) && n >= 0);
+  pubkeys = pubkeys
+    .map(sanitizePubkey)
+    .filter(Boolean);
 
-  return { validators, window };
+  return { pubkeys, includeBalanceSeries };
 }
 
-async function tryV2({ key, validators, window }) {
+async function fetchV1({ key, pubkey }) {
   const base = "https://beaconcha.in";
   const headers = {
-    Authorization: `Bearer ${key}`,
-    "Content-Type": "application/json",
+    "accept": "application/json",
     "User-Agent": "GotNodes/1.0 (validators dashboard)",
   };
+  if (key) headers.Authorization = `Bearer ${key}`;
 
-  const overviewReq = fetch(`${base}/api/v2/ethereum/validators`, {
-    method: "POST",
-    headers,
-    body: JSON.stringify({
-      chain: "mainnet",
-      page_size: Math.min(50, Math.max(1, validators.length || 1)),
-      cursor: "",
-      // This selector is what some tiers reject.
-      validator: { validator_identifiers: validators },
-    }),
-  });
-
-  const apyReq = fetch(`${base}/api/v2/ethereum/validators/apy-roi`, {
-    method: "POST",
-    headers,
-    body: JSON.stringify({
-      chain: "mainnet",
-      validator: { validator_identifiers: validators },
-      range: { evaluation_window: window },
-    }),
-  });
-
-  const [overviewRes, apyRes] = await Promise.all([overviewReq, apyReq]);
-
-  if (!overviewRes.ok) {
-    const t = await overviewRes.text().catch(() => "");
-    return { ok: false, why: "overview", text: t, status: overviewRes.status };
-  }
-  if (!apyRes.ok) {
-    const t = await apyRes.text().catch(() => "");
-    return { ok: false, why: "apy", text: t, status: apyRes.status };
-  }
-
-  const overviewJson = await overviewRes.json();
-  const apyJson = await apyRes.json();
-
-  const apyTotal = apyJson?.data?.combined?.apy?.total ?? null;
-  const roiTotal = apyJson?.data?.combined?.roi?.total ?? null;
-  const finality = apyJson?.data?.finality ?? null;
-
-  const out = (overviewJson?.data || []).map((v) => {
-    const idx = v?.validator?.index ?? null;
-    const balCur = v?.balances?.current ?? null;
-    const balEff = v?.balances?.effective ?? null;
-
-    const balEth = gweiToEth(balCur);
-    const effEth = gweiToEth(balEff);
-
-    return {
-      validatorId: idx,
-      status: v?.status ?? null,
-      online: v?.online ?? null,
-      balanceEth: balEth === null ? "—" : fmtEth(balEth),
-      effectiveBalanceEth: effEth === null ? "—" : fmtEth(effEth),
-      apy30d: apyTotal === null ? "—" : `${Number(apyTotal).toFixed(2)}%`,
-      roi30d: roiTotal === null ? "—" : `${Number(roiTotal).toFixed(2)}%`,
-      finality: finality ?? "—",
-    };
-  });
-
-  return { ok: true, validators: out };
-}
-
-async function v1Validator({ base, headers, index }) {
-  // v1 paths are plan-friendly; we keep the dependency surface small.
-  // Response shapes vary a bit, so we defensive-parse.
-  const url = `${base}/api/v1/validator/${index}`;
+  const url = `${base}/api/v1/validator/${encodeURIComponent(pubkey)}`;
   const res = await fetch(url, { headers });
+
   if (!res.ok) {
     const t = await res.text().catch(() => "");
-    throw new Error(`beaconcha v1 validator ${index} failed: ${res.status} ${t}`);
+    throw new Error(`beaconcha validator failed: ${res.status} ${res.statusText} ${t}`.trim());
   }
-  return res.json();
+
+  const j = await res.json().catch(() => ({}));
+  // beaconcha v1 commonly returns { status: "OK", data: [...] } (sometimes data object)
+  const data = Array.isArray(j?.data) ? j.data[0] : (j?.data || null);
+  return data;
 }
 
-async function v1Balances({ base, headers, index }) {
-  // Optional: some tiers allow this, others might not. We'll ignore failure.
-  const url = `${base}/api/v1/validator/${index}/balance`;
-  const res = await fetch(url, { headers });
-  if (!res.ok) return null;
-  return res.json().catch(() => null);
-}
-
-async function fallbackV1({ key, validators }) {
+async function fetchBalanceSeriesV1({ key, pubkey }) {
   const base = "https://beaconcha.in";
   const headers = {
-    // v1 often works without auth, but keep bearer if you have it.
-    Authorization: key ? `Bearer ${key}` : undefined,
+    "accept": "application/json",
     "User-Agent": "GotNodes/1.0 (validators dashboard)",
   };
-  // remove undefined header values
-  Object.keys(headers).forEach(k => headers[k] === undefined && delete headers[k]);
+  if (key) headers.Authorization = `Bearer ${key}`;
 
-  const out = await Promise.all(
-    validators.slice(0, 4).map(async (index) => {
-      try {
-      const v = await v1Validator({ base, headers, index });
-      const bal = await v1Balances({ base, headers, index });
+  const url = `${base}/api/v1/validator/${encodeURIComponent(pubkey)}/balance`;
+  const res = await fetch(url, { headers });
 
-      // v1 "status" can be string or number; we keep it raw-ish.
-      const status = v?.data?.status ?? v?.status ?? v?.data?.state ?? "unknown";
-      const idx = v?.data?.validatorindex ?? v?.data?.index ?? v?.validatorindex ?? index;
+  if (!res.ok) {
+    const t = await res.text().catch(() => "");
+    throw new Error(`beaconcha balance failed: ${res.status} ${res.statusText} ${t}`.trim());
+  }
 
-      // balances: try to find the newest balance snapshot
-      let balanceEth = "—";
-      let effectiveBalanceEth = "—";
+  const j = await res.json().catch(() => ({}));
+  const rows = Array.isArray(j?.data) ? j.data : [];
 
-      const balRow = Array.isArray(bal?.data) ? bal.data[0] : null;
-      // Many beacon APIs use gwei.
-      const b1 = balRow?.balance ?? v?.data?.balance ?? null;
-      const eb1 = v?.data?.effectivebalance ?? v?.data?.effective_balance ?? null;
-
-      const be = gweiToEth(b1);
-      const ebe = gweiToEth(eb1);
-
-      if (be !== null) balanceEth = fmtEth(be);
-      if (ebe !== null) effectiveBalanceEth = fmtEth(ebe);
-
+  // rows are usually newest-first or oldest-first depending on endpoint; we just take last 30 by time
+  const parsed = rows
+    .map(r => {
+      // known fields often include balance (gwei) and effectivebalance (gwei)
+      const bal = r?.balance ?? r?.balance_gwei ?? r?.balanceWei ?? r?.balancewei ?? null;
+      const eff = r?.effectivebalance ?? r?.effective_balance ?? r?.effectiveBalance ?? null;
+      const ts = Number(r?.timestamp ?? r?.ts ?? r?.time ?? r?.day ?? 0);
       return {
-        validatorId: idx,
-        status,
-        online: null, // v1 doesn't reliably expose online; UI will show status pill.
-        balanceEth,
-        effectiveBalanceEth,
-        apy30d: "—",
-        roi30d: "—",
-        finality: "—",
+        ts: Number.isFinite(ts) ? ts : 0,
+        balEth: gweiToEth(bal),
+        effEth: gweiToEth(eff),
       };
-      } catch (e) {
-        const msg = String(e?.message || e);
-        const rateLimited = msg.includes("429") || msg.toLowerCase().includes("too many requests");
-        return {
-          validatorId: index,
-          status: rateLimited ? "RATE_LIMIT" : "ERROR",
-          online: null,
-          balanceEth: "—",
-          effectiveBalanceEth: "—",
-          apy30d: "—",
-          roi30d: "—",
-          finality: "—",
-          detail: msg.slice(0, 160),
-        };
-      }
     })
+    .filter(x => x.balEth != null);
+
+  // sort by ts if present
+  parsed.sort((a, b) => (a.ts || 0) - (b.ts || 0));
+
+  const balSeries = parsed.slice(-30).map(x => x.balEth);
+  const effSeries = parsed.slice(-30).map(x => x.effEth).filter(v => v != null);
+
+  return { balSeries, effSeries };
+}
+
+function mapValidator(v1, pubkey, balanceSeries) {
+  // Beaconcha field names vary. Try common ones.
+  const idx =
+    v1?.validatorindex ??
+    v1?.validatorIndex ??
+    v1?.index ??
+    v1?.validator_id ??
+    null;
+
+  const status =
+    v1?.status ??
+    v1?.state ??
+    v1?.validatorstatus ??
+    null;
+
+  // Online is not always present in v1; if missing we leave null.
+  const online =
+    typeof v1?.online === "boolean" ? v1.online :
+    (typeof v1?.is_online === "boolean" ? v1.is_online : null);
+
+  const balEth = gweiToEth(
+    v1?.balance ??
+    v1?.balance_gwei ??
+    v1?.currentbalance ??
+    v1?.current_balance ??
+    null
   );
+
+  const effEth = gweiToEth(
+    v1?.effectivebalance ??
+    v1?.effective_balance ??
+    v1?.effectiveBalance ??
+    null
+  );
+
+  const out = {
+    pubkey: v1?.pubkey || pubkey,
+    validatorId: idx,
+    status,
+    online,
+    balanceEth: balEth == null ? "—" : fmtEth(balEth),
+    effectiveBalanceEth: effEth == null ? "—" : fmtEth(effEth),
+    updated: new Date().toLocaleString(),
+  };
+
+  if (balanceSeries?.balSeries?.length) {
+    out.balanceSeriesEth = balanceSeries.balSeries.map(n => Number(n)).filter(Number.isFinite);
+  }
 
   return out;
 }
 
-async function handler({ request, env }) {
-  const key = env.BEACONCHA_IN_API_KEY || "";
-  const { validators, window } = await readBody(request);
-
-  if (!validators.length) {
-    return json({ validators: [] }, 200);
-  }
-
-  // Cache: prevent hammering Beaconcha (avoids 429). We only ever render 4 slots.
-  const v4 = validators.slice(0, 4);
-  const cacheUrl = new URL(request.url);
-  cacheUrl.searchParams.set("validators", v4.join(","));
-  cacheUrl.searchParams.set("window", window || "30d");
-  const cacheKey = new Request(cacheUrl.toString(), { method: "GET" });
-  const cache = caches?.default;
-
-  if (cache) {
-    const hit = await cache.match(cacheKey);
-    if (hit) {
-      const r = new Response(hit.body, hit);
-      r.headers.set("X-GotNodes-Cache", "HIT");
-      return r;
-    }
-  }
-
-  // Try v2 first (best data).
-  const v2 = await tryV2({ key, validators: v4, window });
-  if (v2.ok) {
-    const res = json({ validators: v2.validators });
-    if (cache) {
-      res.headers.set("Cache-Control", "public, max-age=20");
-      await cache.put(cacheKey, res.clone());
-    }
-    return res;
-  }
-
-  // If v2 fails due to plan/tier selector limits, fall back to v1.
-  const failText = v2?.text || "";
-  if (isSelectorTierError(failText)) {
-    const v1 = await fallbackV1({ key, validators });
-    return json({
-      validators: v1,
-      note: "Beaconcha v2 selector restricted on this API plan. Served via v1 fallback (no APY/ROI).",
-    });
-  }
-
-  // Any other failure: forward a clean error.
-  return json(
-    { error: "beaconcha request failed", detail: failText, where: v2?.why || "unknown" },
-    502
-  );
-}
-
 export async function onRequest(context) {
-  const { request } = context;
-
-  // allow preflight
-  if (request.method === "OPTIONS") {
-    return new Response(null, {
-      status: 204,
-      headers: {
-        "Access-Control-Allow-Origin": "*",
-        "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
-        "Access-Control-Allow-Headers": "Content-Type",
-      },
-    });
-  }
-
-  if (request.method !== "GET" && request.method !== "POST") {
-    return new Response("Method Not Allowed", { status: 405 });
-  }
+  const { request, env } = context;
 
   try {
-    const res = await handler(context);
-    res.headers.set("Access-Control-Allow-Origin", "*");
-    return res;
-  } catch (e) {
-    // Prevent Cloudflare's HTML 502 page from leaking into the UI.
-    return json({ error: "eth function crashed", detail: String(e?.message || e) }, 502, {
-      "Access-Control-Allow-Origin": "*",
+    const key = env.BEACONCHA_IN_API_KEY || "";
+    const { pubkeys, includeBalanceSeries } = await readBody(request);
+
+    if (!pubkeys.length) {
+      return json({ validators: [], ts: Date.now() }, 200);
+    }
+
+    const limited = pubkeys.slice(0, 50);
+
+    const tasks = limited.map(async (pk) => {
+      try {
+        const v1 = await fetchV1({ key, pubkey: pk });
+        let series = null;
+        if (includeBalanceSeries) {
+          try {
+            series = await fetchBalanceSeriesV1({ key, pubkey: pk });
+          } catch {
+            series = null;
+          }
+        }
+        return mapValidator(v1, pk, series);
+      } catch (e) {
+        return {
+          pubkey: pk,
+          validatorId: null,
+          status: "error",
+          online: null,
+          balanceEth: "—",
+          effectiveBalanceEth: "—",
+          updated: new Date().toLocaleString(),
+          error: String(e?.message || e),
+        };
+      }
     });
+
+    const validators = await Promise.all(tasks);
+
+    return json({ validators, ts: Date.now() }, 200);
+  } catch (e) {
+    return json({ error: "eth function crashed", detail: String(e?.message || e) }, 502);
   }
 }
