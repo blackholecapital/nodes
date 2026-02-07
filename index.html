@@ -59,14 +59,14 @@
                 <label class="edit-label" for="ethInput">Ethereum Validator Public Keys</label>
                 <textarea id="ethInput" class="edit-text" rows="6"
                   placeholder="One per line or comma-separated&#10;Example:&#10;0xabc...&#10;0xdef..."></textarea>
-                <div class="edit-hint">Paste up to 4 for the main ETH validator panel.</div>
+                <div class="edit-hint">Paste up to 4 for the main ETH panel.</div>
               </div>
 
               <div class="edit-col">
                 <label class="edit-label" for="avaxInput">Avalanche NodeIDs</label>
                 <textarea id="avaxInput" class="edit-text" rows="6"
                   placeholder="One per line&#10;Example:&#10;NodeID-...&#10;NodeID-..."></textarea>
-                <div class="edit-hint">Paste up to 4 for the main AVAX validator panel.</div>
+                <div class="edit-hint">Paste up to 4 for the main AVAX panel.</div>
               </div>
             </div>
 
@@ -111,38 +111,48 @@
         </footer>
       </div>
 
-      <!-- RIGHT SIDE: 2 DefiLlama windows + ETH live validator -->
+      <!-- RIGHT SIDE: TEXT ONLY -->
       <aside class="side-stack" aria-label="Network intelligence">
 
-        <!-- ETH DEFI LLAMA -->
+        <!-- ETH DefiLlama (TEXT) -->
         <section class="panel side-panel" id="ethTvlPanel">
           <div class="panel-title">
             <span class="chip">ETH</span>
             <span class="panel-h">DeFiLlama TVL</span>
-            <span class="panel-note" id="ethTvlStatus">loading…</span>
+            <span class="panel-note" id="ethTvlStatus">idle</span>
           </div>
 
           <div class="intel">
-            <div class="intel-metrics" id="ethTvlMetrics"></div>
-            <canvas class="intel-chart" id="ethTvlChart" width="320" height="120" aria-label="Ethereum TVL chart"></canvas>
+            <div class="intel-live">
+              <div class="intel-live-top">
+                <div class="intel-live-title">TEXT FEED</div>
+                <button class="btn btn-sm" id="ethTvlRefresh" type="button">REFRESH</button>
+              </div>
+              <div class="intel-live-out" id="ethTvlOut">—</div>
+            </div>
           </div>
         </section>
 
-        <!-- AVAX DEFI LLAMA -->
+        <!-- AVAX DefiLlama (TEXT) -->
         <section class="panel side-panel" id="avaxTvlPanel">
           <div class="panel-title">
             <span class="chip">AVAX</span>
             <span class="panel-h">DeFiLlama TVL</span>
-            <span class="panel-note" id="avaxTvlStatus">loading…</span>
+            <span class="panel-note" id="avaxTvlStatus">idle</span>
           </div>
 
           <div class="intel">
-            <div class="intel-metrics" id="avaxTvlMetrics"></div>
-            <canvas class="intel-chart" id="avaxTvlChart" width="320" height="120" aria-label="Avalanche TVL chart"></canvas>
+            <div class="intel-live">
+              <div class="intel-live-top">
+                <div class="intel-live-title">TEXT FEED</div>
+                <button class="btn btn-sm" id="avaxTvlRefresh" type="button">REFRESH</button>
+              </div>
+              <div class="intel-live-out" id="avaxTvlOut">—</div>
+            </div>
           </div>
         </section>
 
-        <!-- ETH LIVE VALIDATOR (PUBKEY) -->
+        <!-- ETH Live Validator (TEXT) -->
         <section class="panel side-panel" id="ethLivePanel">
           <div class="panel-title">
             <span class="chip">ETH</span>
@@ -162,8 +172,6 @@
 
               <div class="intel-live-out" id="ethPkOut">—</div>
             </div>
-
-            <canvas class="intel-chart" id="ethPkChart" width="320" height="120" aria-label="Balance sparkline chart"></canvas>
           </div>
         </section>
 
