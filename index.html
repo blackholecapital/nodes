@@ -10,175 +10,147 @@
   <div class="scanlines" aria-hidden="true"></div>
 
   <main class="wrap">
-   <header class="top">
-  <div class="brand-frame">
-    <div class="brand">
-      <div class="logo-box" aria-hidden="true">GN</div>
-      <div class="brand-text">
-        <h1>GOT NODES?</h1>
-        <p class="tagline">Private placement validators. Bare metal. No cloud. No mystery.</p>
-      </div>
-    </div>
-
-    <div class="pitch">
-      <div class="pitch-title">WHAT WE DO</div>
-      <div class="pitch-body">
-        <p>
-          We run <span class="hi">physically-owned validator infrastructure</span> in partner data centers.
-          No AWS. No “trust us” virtual machines. Hardware you can audit, locate, and touch.
-        </p>
-        <p class="sub">
-          Focus: Ethereum + Avalanche.
-        </p>
-      </div>
-
-      <div class="meta">
-        <div class="meta-item">
-          <span class="meta-k">Refresh</span>
-          <span class="meta-v" id="refreshEvery">5:00</span>
-        </div>
-        <div class="meta-item">
-          <span class="meta-k">Last update</span>
-          <span class="meta-v" id="lastUpdate">—</span>
-        </div>
-        <div class="meta-item">
-          <span class="meta-k">Status</span>
-          <span class="meta-v" id="statusLine">Booting…</span>
-        </div>
-      </div>
-    </div>
-
-    <!-- ✅ EDIT MODE -->
-    <div class="edit-wrap">
-      <div class="edit-top">
-        <div class="edit-title">EDIT MODE</div>
-        <button class="btn" id="toggleEdit" type="button" aria-expanded="false">
-          OPEN
-        </button>
-      </div>
-
-      <div class="edit-panel" id="editPanel" hidden>
-        <div class="edit-grid">
-          <div class="edit-col">
-            <label class="edit-label" for="ethInput">Ethereum Validator IDs (indices)</label>
-            <textarea id="ethInput" class="edit-text" rows="6"
-              placeholder="One per line or comma-separated&#10;Example:&#10;12345&#10;67890&#10;24680&#10;13579"></textarea>
-            <div class="edit-hint">Tip: paste 4, but it’ll accept more and show first 4.</div>
-          </div>
-
-          <div class="edit-col">
-            <label class="edit-label" for="avaxInput">Avalanche NodeIDs</label>
-            <textarea id="avaxInput" class="edit-text" rows="6"
-              placeholder="One per line&#10;Example:&#10;NodeID-...&#10;NodeID-..."></textarea>
-            <div class="edit-hint">Tip: paste 4, but it’ll accept more and show first 4.</div>
+    <header class="top">
+      <div class="brand-frame">
+        <div class="brand">
+          <div class="logo-box" aria-hidden="true">GN</div>
+          <div class="brand-text">
+            <h1>GOT NODES?</h1>
+            <p class="tagline">Private placement validators. Bare metal. No cloud. No mystery.</p>
           </div>
         </div>
 
-        <div class="edit-actions">
-          <button class="btn btn-primary" id="saveApply" type="button">SAVE + APPLY</button>
-          <button class="btn" id="resetDefaults" type="button">RESET</button>
-          <div class="edit-msg" id="editMsg">—</div>
+        <div class="pitch">
+          <div class="pitch-title">WHAT WE DO</div>
+          <div class="pitch-body">
+            <p>
+              We run <span class="hi">physically-owned validator infrastructure</span> in partner data centers.
+              No AWS. No “trust us” virtual machines. Hardware you can audit, locate, and touch.
+            </p>
+            <p class="sub">
+              Focus: Ethereum + Avalanche.
+            </p>
+          </div>
+
+          <div class="meta">
+            <div class="meta-item">
+              <span class="meta-k">Refresh</span>
+              <span class="meta-v" id="refreshEvery">5:00</span>
+            </div>
+            <div class="meta-item">
+              <span class="meta-k">Last update</span>
+              <span class="meta-v" id="lastUpdate">—</span>
+            </div>
+            <div class="meta-item">
+              <span class="meta-k">Status</span>
+              <span class="meta-v" id="statusLine">Booting…</span>
+            </div>
+          </div>
         </div>
+
+        <!-- ✅ EDIT MODE -->
+        <div class="edit-wrap">
+          <div class="edit-top">
+            <div class="edit-title">EDIT MODE</div>
+            <button class="btn" id="toggleEdit" type="button" aria-expanded="false">
+              OPEN
+            </button>
+          </div>
+
+          <div class="edit-panel" id="editPanel" hidden>
+            <div class="edit-grid">
+              <div class="edit-col">
+                <label class="edit-label" for="ethInput">Ethereum Validator Public Keys</label>
+                <textarea id="ethInput" class="edit-text" rows="6"
+                  placeholder="One per line or comma-separated&#10;Example:&#10;0xabc...&#10;0xdef..."></textarea>
+                <div class="edit-hint">Tip: paste 4 keys, but it’ll accept more and show first 4.</div>
+              </div>
+
+              <div class="edit-col">
+                <label class="edit-label" for="avaxInput">Avalanche NodeIDs</label>
+                <textarea id="avaxInput" class="edit-text" rows="6"
+                  placeholder="One per line&#10;Example:&#10;NodeID-...&#10;NodeID-..."></textarea>
+                <div class="edit-hint">Tip: paste 4, but it’ll accept more and show first 4.</div>
+              </div>
+            </div>
+
+            <div class="edit-actions">
+              <button class="btn btn-primary" id="saveApply" type="button">SAVE + APPLY</button>
+              <button class="btn" id="resetDefaults" type="button">RESET</button>
+              <div class="edit-msg" id="editMsg">—</div>
+            </div>
+          </div>
+        </div>
+        <!-- /EDIT MODE -->
       </div>
-    </div>
-    <!-- /EDIT MODE -->
-  </div>
-</header>
+    </header>
 
     <div class="content-grid">
       <div class="main-stack">
-
-    <section class="panel">
-      <div class="panel-title">
-        <span class="chip">ETHEREUM</span>
-        <span class="panel-h">Validators</span>
-        <span class="panel-note">(4 slots)</span>
-      </div>
-
-      <div class="grid" id="ethGrid">
-        <!-- cards injected by JS -->
-      </div>
-    </section>
-
-    <section class="panel">
-      <div class="panel-title">
-        <span class="chip">AVALANCHE</span>
-        <span class="panel-h">Validators</span>
-        <span class="panel-note">(4 slots)</span>
-      </div>
-
-      <div class="grid" id="avaxGrid">
-        <!-- cards injected by JS -->
-      </div>
-    </section>
-
-    <footer class="footer">
-      <div class="footer-left">
-        <div class="tiny">Ethereum data powered by beaconcha.in</div>
-      </div>
-
-      <div class="footer-right">
-        <div class="tiny">
-          © *** .xyz Labs ***
-        </div>
-      </div>
-    </footer>
-      </div>
-
-      <aside class="side-stack" aria-label="Network intelligence">
-        <section class="panel side-panel" id="ethIntelPanel">
+        <section class="panel">
           <div class="panel-title">
-            <span class="chip">ETH</span>
-            <span class="panel-h">Intel</span>
-            <span class="panel-note" id="ethIntelStatus">loading…</span>
+            <span class="chip">ETHEREUM</span>
+            <span class="panel-h">Validators</span>
+            <span class="panel-note">(4 slots)</span>
           </div>
 
-          <div class="intel">
-            <div class="intel-metrics" id="ethIntelMetrics">
-              <!-- injected -->
-            </div>
-            <canvas class="intel-chart" id="ethIntelChart" width="320" height="120" aria-label="Ethereum sparkline chart"></canvas>
-
-            <div class="intel-live">
-              <div class="intel-live-top">
-                <div class="intel-live-title">LIVE TRACK</div>
-                <button class="btn btn-sm" id="ethTrackApply" type="button">APPLY</button>
-              </div>
-              <label class="edit-label" for="ethTrackInput">Ethereum Validator ID</label>
-              <input id="ethTrackInput" class="edit-text edit-input" type="text" placeholder="Example: 123456" />
-              <div class="intel-live-out" id="ethTrackOut">—</div>
-            </div>
+          <div class="grid" id="ethGrid">
+            <!-- cards injected by JS -->
           </div>
         </section>
 
-        <section class="panel side-panel" id="avaxIntelPanel">
+        <section class="panel">
           <div class="panel-title">
-            <span class="chip">AVAX</span>
-            <span class="panel-h">Intel</span>
-            <span class="panel-note" id="avaxIntelStatus">loading…</span>
+            <span class="chip">AVALANCHE</span>
+            <span class="panel-h">Validators</span>
+            <span class="panel-note">(4 slots)</span>
+          </div>
+
+          <div class="grid" id="avaxGrid">
+            <!-- cards injected by JS -->
+          </div>
+        </section>
+
+        <footer class="footer">
+          <div class="footer-left">
+            <div class="tiny">Ethereum data powered by beaconcha.in</div>
+          </div>
+
+          <div class="footer-right">
+            <div class="tiny">© *** .xyz Labs ***</div>
+          </div>
+        </footer>
+      </div>
+
+      <!-- RIGHT SIDE: start basic (ETH public key → real-time output) -->
+      <aside class="side-stack" aria-label="Live tracking">
+        <section class="panel side-panel" id="ethLivePanel">
+          <div class="panel-title">
+            <span class="chip">ETH</span>
+            <span class="panel-h">Live Validator</span>
+            <span class="panel-note" id="ethLiveStatus">idle</span>
           </div>
 
           <div class="intel">
-            <div class="intel-metrics" id="avaxIntelMetrics">
-              <!-- injected -->
-            </div>
-            <canvas class="intel-chart" id="avaxIntelChart" width="320" height="120" aria-label="Avalanche sparkline chart"></canvas>
-
             <div class="intel-live">
               <div class="intel-live-top">
-                <div class="intel-live-title">LIVE TRACK</div>
-                <button class="btn btn-sm" id="avaxTrackApply" type="button">APPLY</button>
+                <div class="intel-live-title">PUBLIC KEY TRACK</div>
+                <button class="btn btn-sm" id="ethPkApply" type="button">APPLY</button>
               </div>
-              <label class="edit-label" for="avaxTrackInput">Avalanche NodeID</label>
-              <input id="avaxTrackInput" class="edit-text edit-input" type="text" placeholder="Example: NodeID-…" />
-              <div class="intel-live-out" id="avaxTrackOut">—</div>
+
+              <label class="edit-label" for="ethPkInput">Validator Public Key</label>
+              <input id="ethPkInput" class="edit-text edit-input" type="text" placeholder="0x…" />
+
+              <div class="intel-live-out" id="ethPkOut">—</div>
             </div>
+
+            <canvas class="intel-chart" id="ethPkChart" width="320" height="120" aria-label="Balance sparkline chart"></canvas>
           </div>
         </section>
       </aside>
     </div>
   </main>
 
-  <script src="./app.js"></script>
+  <script type="module" src="./app.js"></script>
 </body>
 </html>
