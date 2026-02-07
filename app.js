@@ -1,18 +1,18 @@
 /**
- * GOT NODES
- *
- * - Right side: 2 DefiLlama TVL panels (ETH + AVAX) with charts
- * - Right side: ETH live validator by PUBLIC KEY (0x…)
- * - Main panels: ETH validators by pubkey, AVAX validators by NodeID
+ * GOT NODES - TEXT ONLY MODE
+ * - NO charts, NO canvas.
+ * - ETH/AVAX main panels still render.
+ * - Right side: ETH DefiLlama TVL (text), AVAX DefiLlama TVL (text), ETH Live Validator (pubkey, text).
+ * - Each box prints raw error/response details so we can see what is failing.
  */
 
-const DEFAULT_ETH_VALIDATORS = []; // keep empty by default; user can paste keys in Edit Mode
-const DEFAULT_AVAX_NODE_IDS = [];  // keep empty by default; user can paste NodeIDs in Edit Mode
+const DEFAULT_ETH_VALIDATORS = [];
+const DEFAULT_AVAX_NODE_IDS = [];
 
-const REFRESH_MS = 5 * 60 * 1000;     // main panels
+const REFRESH_MS = 5 * 60 * 1000;
 const REFRESH_LABEL = "5:00";
-const LLAMA_REFRESH_MS = 60 * 1000;   // TVL panels
-const LIVE_REFRESH_MS = 10 * 1000;    // ETH pubkey live
+const LLAMA_REFRESH_MS = 60 * 1000;
+const LIVE_REFRESH_MS = 10 * 1000;
 
 const LS_KEYS = {
   eth: "gotnodes.eth.pubkeys",
@@ -42,26 +42,33 @@ const el = {
   resetDefaults: document.getElementById("resetDefaults"),
   editMsg: document.getElementById("editMsg"),
 
-  // DefiLlama panels
+  // llama text boxes
   ethTvlStatus: document.getElementById("ethTvlStatus"),
   avaxTvlStatus: document.getElementById("avaxTvlStatus"),
-  ethTvlMetrics: document.getElementById("ethTvlMetrics"),
-  avaxTvlMetrics: document.getElementById("avaxTvlMetrics"),
-  ethTvlChart: document.getElementById("ethTvlChart"),
-  avaxTvlChart: document.getElementById("avaxTvlChart"),
+  ethTvlOut: document.getElementById("ethTvlOut"),
+  avaxTvlOut: document.getElementById("avaxTvlOut"),
+  ethTvlRefresh: document.getElementById("ethTvlRefresh"),
+  avaxTvlRefresh: document.getElementById("avaxTvlRefresh"),
 
-  // ETH live-by-pubkey
+  // ETH live
   ethLiveStatus: document.getElementById("ethLiveStatus"),
   ethPkInput: document.getElementById("ethPkInput"),
   ethPkApply: document.getElementById("ethPkApply"),
   ethPkOut: document.getElementById("ethPkOut"),
-  ethPkChart: document.getElementById("ethPkChart"),
 };
 
 if (el.refreshEvery) el.refreshEvery.textContent = REFRESH_LABEL;
 
 function nowStamp() {
   return new Date().toLocaleString();
+}
+
+function setText(node, txt) {
+  if (node) node.textContent = String(txt ?? "");
+}
+
+function setHTML(node, html) {
+  if (node) node.innerHTML = html;
 }
 
 function shortId(s, keep = 10) {
@@ -135,140 +142,41 @@ function saveToLocalStorage() {
   }
 }
 
-function postJSON(path, body) {
-  return fetch(path, {
+async function postJSON(path, body) {
+  const res = await fetch(path, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body || {}),
-  }).then(async (r) => {
-    if (!r.ok) {
-      const t = await r.text().catch(() => "");
-      throw new Error(`${r.status} ${r.statusText} ${t}`.trim());
-    }
-    return r.json();
   });
-}
 
-function setText(node, txt) {
-  if (node) node.textContent = txt;
-}
-
-function setHTML(node, html) {
-  if (node) node.innerHTML = html;
-}
-
-/* ===== Charts / metrics ===== */
-
-function fmtUSD(n) {
-  const x = Number(n);
-  if (!Number.isFinite(x)) return "—";
-  const abs = Math.abs(x);
-  if (abs >= 1e12) return `$${(x / 1e12).toFixed(2)}T`;
-  if (abs >= 1e9) return `$${(x / 1e9).toFixed(2)}B`;
-  if (abs >= 1e6) return `$${(x / 1e6).toFixed(2)}M`;
-  if (abs >= 1e3) return `$${(x / 1e3).toFixed(2)}K`;
-  return `$${x.toFixed(2)}`;
-}
-
-function pct(n) {
-  const x = Number(n);
-  if (!Number.isFinite(x)) return "—";
-  const sign = x > 0 ? "+" : "";
-  return `${sign}${x.toFixed(2)}%`;
-}
-
-function drawSparkline(canvas, series) {
-  if (!canvas || !canvas.getContext) return;
-  const ctx = canvas.getContext("2d");
-  const w = canvas.width || 320;
-  const h = canvas.height || 120;
-
-  ctx.clearRect(0, 0, w, h);
-
-  const pts = (Array.isArray(series) ? series : [])
-    .map(v => Number(v))
-    .filter(v => Number.isFinite(v));
-
-  if (pts.length < 2) return;
-
-  const min = Math.min(...pts);
-  const max = Math.max(...pts);
-  const pad = 10;
-  const span = (max - min) || 1;
-
-  // grid
-  ctx.globalAlpha = 0.22;
-  ctx.beginPath();
-  for (let i = 1; i <= 3; i++) {
-    const y = pad + (i * (h - pad * 2)) / 4;
-    ctx.moveTo(pad, y);
-    ctx.lineTo(w - pad, y);
+  const text = await res.text().catch(() => "");
+  if (!res.ok) {
+    // include body in error for debug
+    throw new Error(`${res.status} ${res.statusText} :: ${text}`.trim());
   }
-  ctx.strokeStyle = "rgba(0,255,170,0.25)";
-  ctx.lineWidth = 1;
-  ctx.stroke();
 
-  // line
-  ctx.globalAlpha = 1;
-  ctx.beginPath();
-  pts.forEach((v, i) => {
-    const x = pad + (i * (w - pad * 2)) / (pts.length - 1);
-    const y = pad + (1 - (v - min) / span) * (h - pad * 2);
-    if (i === 0) ctx.moveTo(x, y);
-    else ctx.lineTo(x, y);
-  });
-  ctx.lineWidth = 2;
-  ctx.strokeStyle = "rgba(0,255,170,0.9)";
-  ctx.shadowColor = "rgba(0,0,0,0.35)";
-  ctx.shadowBlur = 6;
-  ctx.stroke();
-  ctx.shadowBlur = 0;
-
-  // last point
-  const last = pts[pts.length - 1];
-  const lx = w - pad;
-  const ly = pad + (1 - (last - min) / span) * (h - pad * 2);
-  ctx.beginPath();
-  ctx.arc(lx, ly, 3, 0, Math.PI * 2);
-  ctx.fillStyle = "rgba(0,255,170,0.95)";
-  ctx.shadowBlur = 10;
-  ctx.fill();
-  ctx.shadowBlur = 0;
-}
-
-function renderMiniMetrics(container, items) {
-  if (!container) return;
-  const xs = Array.isArray(items) ? items : [];
-  container.innerHTML = xs.map(({ k, v }) => `
-    <div class="kv-mini">
-      <div class="k">${k}</div>
-      <div class="v">${v}</div>
-    </div>
-  `).join("");
-}
-
-/* ===== Main panels ===== */
-
-function renderEmptyGrid(gridEl, label) {
-  if (!gridEl) return;
-  gridEl.innerHTML = "";
-  for (let i = 0; i < 4; i++) {
-    const card = document.createElement("div");
-    card.className = "card";
-    card.innerHTML = `
-      <div class="card-top">
-        <div class="card-title">${label} ${i + 1}</div>
-        <div class="pill pill-warn">EMPTY</div>
-      </div>
-      <div class="rows">
-        <div class="row"><span class="k">Add IDs</span><span class="v">Edit Mode</span></div>
-        <div class="row"><span class="k">Status</span><span class="v">—</span></div>
-        <div class="row"><span class="k">Updated</span><span class="v">—</span></div>
-      </div>
-    `;
-    gridEl.appendChild(card);
+  // parse json
+  try {
+    return JSON.parse(text || "{}");
+  } catch {
+    throw new Error(`Invalid JSON from ${path} :: ${text}`.trim());
   }
 }
+
+async function getJSON(url) {
+  const res = await fetch(url);
+  const text = await res.text().catch(() => "");
+  if (!res.ok) {
+    throw new Error(`${res.status} ${res.statusText} :: ${text}`.trim());
+  }
+  try {
+    return JSON.parse(text || "{}");
+  } catch {
+    throw new Error(`Invalid JSON from ${url} :: ${text}`.trim());
+  }
+}
+
+/* ===== MAIN PANELS (unchanged visual cards) ===== */
 
 function pillClassFromStatus(status) {
   const s = String(status || "").toLowerCase();
@@ -305,7 +213,8 @@ function makeCard(type, it, idx) {
         ["Balance (ETH)", it.balanceEth ?? "—"],
         ["Effective (ETH)", it.effectiveBalanceEth ?? "—"],
         ["Updated", it.updated ?? "—"],
-      ]
+        it.error ? ["Error", String(it.error)] : null,
+      ].filter(Boolean)
     : [
         ["NodeID", shortId(it.nodeId ?? "—", 12)],
         ["Status", it.validationStatus ?? "—"],
@@ -314,7 +223,8 @@ function makeCard(type, it, idx) {
         ["Delegators", it.delegatorCount ?? "—"],
         ["Delegation Fee", it.delegationFeePct ?? "—"],
         ["Updated", it.updated ?? "—"],
-      ];
+        it.error ? ["Error", String(it.error)] : null,
+      ].filter(Boolean);
 
   card.innerHTML = `
     <div class="card-top">
@@ -339,6 +249,27 @@ function renderGrid(gridEl, type, items) {
   }
 }
 
+function renderEmptyGrid(gridEl, label) {
+  if (!gridEl) return;
+  gridEl.innerHTML = "";
+  for (let i = 0; i < 4; i++) {
+    const card = document.createElement("div");
+    card.className = "card";
+    card.innerHTML = `
+      <div class="card-top">
+        <div class="card-title">${label} ${i + 1}</div>
+        <div class="pill pill-warn">EMPTY</div>
+      </div>
+      <div class="rows">
+        <div class="row"><span class="k">Add IDs</span><span class="v">Edit Mode</span></div>
+        <div class="row"><span class="k">Status</span><span class="v">—</span></div>
+        <div class="row"><span class="k">Updated</span><span class="v">—</span></div>
+      </div>
+    `;
+    gridEl.appendChild(card);
+  }
+}
+
 async function refreshMainPanels() {
   setText(el.statusLine, "Fetching…");
   setText(el.lastUpdate, "—");
@@ -357,10 +288,14 @@ async function refreshMainPanels() {
 
     if (ethRes.status === "fulfilled" && ethPubkeys.length) {
       renderGrid(el.ethGrid, "eth", ethRes.value?.validators || []);
+    } else if (ethRes.status === "rejected") {
+      console.warn("ETH main failed:", ethRes.reason);
     }
 
     if (avaxRes.status === "fulfilled" && avaxNodeIds.length) {
       renderGrid(el.avaxGrid, "avax", avaxRes.value?.validators || []);
+    } else if (avaxRes.status === "rejected") {
+      console.warn("AVAX main failed:", avaxRes.reason);
     }
 
     setText(el.lastUpdate, nowStamp());
@@ -371,113 +306,85 @@ async function refreshMainPanels() {
   }
 }
 
-/* ===== DefiLlama TVL panels ===== */
+/* ===== RIGHT SIDE: TEXT ONLY (DefiLlama) ===== */
 
-async function fetchLlama(chain) {
-  const url = new URL("/api/llama", location.origin);
-  url.searchParams.set("chain", chain);
-  const r = await fetch(url.toString());
-  if (!r.ok) {
-    const t = await r.text().catch(() => "");
-    throw new Error(`${r.status} ${r.statusText} ${t}`.trim());
+async function refreshLlamaOne(chain, statusEl, outEl) {
+  try {
+    setText(statusEl, "loading…");
+
+    const url = new URL("/api/llama", location.origin);
+    url.searchParams.set("chain", chain);
+
+    const d = await getJSON(url.toString());
+
+    // Print only text; includes raw debug.
+    const lines = [
+      `Chain: ${String(d?.chain ?? chain)}`,
+      `TVL current: ${String(d?.tvl?.current ?? "—")}`,
+      `7d change %: ${String(d?.tvl?.change7dPct ?? "—")}`,
+      `30d change %: ${String(d?.tvl?.change30dPct ?? "—")}`,
+      `Updated: ${String(d?.updated ?? nowStamp())}`,
+      ``,
+      `DEBUG:`,
+      `${escapeHtml(JSON.stringify(d, null, 2))}`,
+    ];
+
+    setHTML(outEl, `<pre style="white-space:pre-wrap;margin:0;">${lines.join("\n")}</pre>`);
+    setText(statusEl, "live");
+  } catch (e) {
+    setText(statusEl, "error");
+    setHTML(outEl, `<pre style="white-space:pre-wrap;margin:0;">ERROR:\n${escapeHtml(String(e?.message || e))}</pre>`);
   }
-  return r.json();
 }
 
 async function refreshLlamaPanels() {
-  // ETH
-  try {
-    setText(el.ethTvlStatus, "loading…");
-    const d = await fetchLlama("Ethereum");
-    renderMiniMetrics(el.ethTvlMetrics, [
-      { k: "TVL", v: fmtUSD(d?.tvl?.current) },
-      { k: "7D Change", v: pct(d?.tvl?.change7dPct) },
-      { k: "30D Change", v: pct(d?.tvl?.change30dPct) },
-      { k: "Updated", v: d?.updated || nowStamp() },
-    ]);
-    drawSparkline(el.ethTvlChart, d?.series?.tvl30d || []);
-    setText(el.ethTvlStatus, "live");
-  } catch (e) {
-    setText(el.ethTvlStatus, "error");
-    renderMiniMetrics(el.ethTvlMetrics, [
-      { k: "Error", v: (e && e.message) ? e.message : "failed" },
-      { k: "", v: "" },
-      { k: "", v: "" },
-      { k: "", v: "" },
-    ]);
-    drawSparkline(el.ethTvlChart, []);
-  }
-
-  // AVAX (chain name in DefiLlama = "Avalanche")
-  try {
-    setText(el.avaxTvlStatus, "loading…");
-    const d = await fetchLlama("Avalanche");
-    renderMiniMetrics(el.avaxTvlMetrics, [
-      { k: "TVL", v: fmtUSD(d?.tvl?.current) },
-      { k: "7D Change", v: pct(d?.tvl?.change7dPct) },
-      { k: "30D Change", v: pct(d?.tvl?.change30dPct) },
-      { k: "Updated", v: d?.updated || nowStamp() },
-    ]);
-    drawSparkline(el.avaxTvlChart, d?.series?.tvl30d || []);
-    setText(el.avaxTvlStatus, "live");
-  } catch (e) {
-    setText(el.avaxTvlStatus, "error");
-    renderMiniMetrics(el.avaxTvlMetrics, [
-      { k: "Error", v: (e && e.message) ? e.message : "failed" },
-      { k: "", v: "" },
-      { k: "", v: "" },
-      { k: "", v: "" },
-    ]);
-    drawSparkline(el.avaxTvlChart, []);
-  }
+  await Promise.all([
+    refreshLlamaOne("Ethereum", el.ethTvlStatus, el.ethTvlOut),
+    refreshLlamaOne("Avalanche", el.avaxTvlStatus, el.avaxTvlOut),
+  ]);
 }
 
-/* ===== ETH live validator by pubkey ===== */
+/* ===== RIGHT SIDE: ETH LIVE (TEXT ONLY) ===== */
 
 async function refreshEthLive() {
   const pk = state.liveEthPubkey;
   if (!pk) {
     setText(el.ethLiveStatus, "idle");
     setText(el.ethPkOut, "—");
-    drawSparkline(el.ethPkChart, []);
     return;
   }
 
   try {
     setText(el.ethLiveStatus, "fetching…");
-    const r = await postJSON("/api/eth", { pubkeys: [pk], includeBalanceSeries: true });
-    const v = (r?.validators || [])[0];
+
+    const d = await postJSON("/api/eth", { pubkeys: [pk], includeBalanceSeries: false });
+    const v = (d?.validators || [])[0];
 
     if (!v) {
       setText(el.ethLiveStatus, "no data");
-      setText(el.ethPkOut, "No data returned.");
-      drawSparkline(el.ethPkChart, []);
+      setText(el.ethPkOut, "No validator returned. (See console)");
       return;
     }
 
-    const onlineLabel = v.online === true
-      ? "<span class='ok'>ONLINE</span>"
-      : v.online === false
-      ? "<span class='bad'>OFFLINE</span>"
-      : "<span class='warn'>UNKNOWN</span>";
-
-    setHTML(el.ethPkOut, [
-      `Pubkey: <span class='ok'>${shortId(v.pubkey || pk, 22)}</span>`,
-      `Index: <span class='ok'>${String(v.validatorId ?? "—")}</span>`,
+    const lines = [
+      `Pubkey: ${String(v.pubkey ?? pk)}`,
+      `Index: ${String(v.validatorId ?? "—")}`,
       `Status: ${String(v.status ?? "—")}`,
-      `Online: ${onlineLabel}`,
-      `Balance: ${String(v.balanceEth ?? "—")} ETH`,
-      `Effective: ${String(v.effectiveBalanceEth ?? "—")} ETH`,
+      `Online: ${String(v.online ?? "—")}`,
+      `Balance ETH: ${String(v.balanceEth ?? "—")}`,
+      `Effective ETH: ${String(v.effectiveBalanceEth ?? "—")}`,
       `Updated: ${String(v.updated ?? nowStamp())}`,
-      v.error ? `<span class='bad'>Error:</span> ${String(v.error)}` : "",
-    ].filter(Boolean).map(x => `<div>${x}</div>`).join(""));
+      v.error ? `ERROR: ${String(v.error)}` : "",
+      ``,
+      `DEBUG:`,
+      `${escapeHtml(JSON.stringify(d, null, 2))}`,
+    ].filter(Boolean);
 
-    drawSparkline(el.ethPkChart, Array.isArray(v.balanceSeriesEth) ? v.balanceSeriesEth : []);
+    setHTML(el.ethPkOut, `<pre style="white-space:pre-wrap;margin:0;">${lines.join("\n")}</pre>`);
     setText(el.ethLiveStatus, "live");
   } catch (e) {
     setText(el.ethLiveStatus, "error");
-    setText(el.ethPkOut, `Error: ${e.message}`);
-    drawSparkline(el.ethPkChart, []);
+    setHTML(el.ethPkOut, `<pre style="white-space:pre-wrap;margin:0;">ERROR:\n${escapeHtml(String(e?.message || e))}</pre>`);
   }
 }
 
@@ -534,14 +441,16 @@ function bindEditMode() {
   }
 }
 
-function bindEthLiveBox() {
+function bindRightSideButtons() {
+  if (el.ethTvlRefresh) el.ethTvlRefresh.addEventListener("click", () => refreshLlamaOne("Ethereum", el.ethTvlStatus, el.ethTvlOut));
+  if (el.avaxTvlRefresh) el.avaxTvlRefresh.addEventListener("click", () => refreshLlamaOne("Avalanche", el.avaxTvlStatus, el.avaxTvlOut));
+
   if (el.ethPkApply && el.ethPkInput) {
     el.ethPkApply.addEventListener("click", async () => {
       const pk = sanitizeEthPubkey(el.ethPkInput.value);
       if (!pk) {
         setText(el.ethLiveStatus, "invalid");
         setText(el.ethPkOut, "Enter a valid 0x… public key.");
-        drawSparkline(el.ethPkChart, []);
         return;
       }
       state.liveEthPubkey = pk;
@@ -551,13 +460,21 @@ function bindEthLiveBox() {
   }
 }
 
+/* ===== tiny helper ===== */
+function escapeHtml(str) {
+  return String(str || "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;");
+}
+
 /* ===== Boot ===== */
 
 (async function boot() {
   loadFromLocalStorage();
   hydrateEditInputs();
   bindEditMode();
-  bindEthLiveBox();
+  bindRightSideButtons();
 
   await refreshMainPanels();
   await refreshLlamaPanels();
