@@ -214,7 +214,7 @@ body{
 .wire-title{
   letter-spacing: .22em;
   font-size: 12px;
-  color: rgba(0,255,170,.95);
+    color: var(--fg);
   text-align:center;
 }
 
@@ -235,6 +235,19 @@ body{
   flex-direction:column;
   gap: 10px;
   padding-top: 14px; /* breathing room under title */
+}
+/* Chart cards: divider should sit under the title (not under meta) */
+.wire-card--charts .wire-head{
+  border-bottom: none;
+  padding: 12px 0 10px;
+}
+
+.wire-card--charts .wire-title{
+  display:block;
+  text-align:center;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--line2);
+  margin-bottom: 10px;
 }
 
 .kv{
