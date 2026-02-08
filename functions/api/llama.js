@@ -18,12 +18,14 @@ export async function onRequest({ request, env }) {
 
     const data = await getAvalancheValidatorStats({ GLACIER_KEY, LLAMA_KEY });
     return json(data, 200);
-
   } catch (e) {
-    return json({
-      error: "upstream_failed",
-      message: String(e?.message || e),
-    }, 502);
+    return json(
+      {
+        error: "upstream_failed",
+        message: String(e?.message || e),
+      },
+      502
+    );
   }
 }
 
@@ -39,174 +41,384 @@ function json(obj, status = 200) {
 
 function hdrs() {
   return {
-    "user-agent": "Mozilla/5.0 (gotnodes.xyz; +https://gotnodes.xyz)",
-    "accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-    "accept-language": "en-US,en;q=0.9",
+    accept: "application/json,text/plain;q=0.9,text/html;q=0.8,*/*;q=0.1",
+    "user-agent": "gotnodes/1.0 (+https://gotnodes.xyz)",
   };
 }
 
-/**
- * ETH GLOBAL VALIDATOR STATS
- * Source: validatorqueue.com (explicitly states data provided by beaconcha.in)
- * We parse these 6 metrics:
- * 1) Active validators
- * 2) Total staked
- * 3) Staking APR
- * 4) Entry queue (ETH + wait)
- * 5) Exit queue (ETH + wait)
- * 6) Churn limit
- */
-async function getEthereumValidatorStats({ BEACON_KEY, LLAMA_KEY } = {}) {
-  const res = await fetch("https://validatorqueue.com/", { headers: hdrs() });
-  if (!res.ok) throw new Error(`validatorqueue_bad_status_${res.status}`);
-  const text = await res.text();
+async function getEthereumValidatorStats({ BEACON_KEY } = {}) {
+  // Prefer the official beaconcha.in API (less brittle than HTML parsing).
+  // If the API call fails (missing key or rate limit), fall back to validatorqueue.com parsing.
+  const apiKey = BEACON_KEY || null;
 
-  // Network (these appear as plain text on the page)
-  const activeValidators = pickNumber(text, /Active Validators:\s*([0-9,]+)/i);
-  const stakedEthM = pickText(text, /Staked ETH:\s*([0-9.]+)M/i); // e.g. 36.5M
-  const apr = pickNumber(text, /APR:\s*([0-9.]+)%/i);
+  // 1) Try beaconcha.in V1 queue endpoint (entry/exit + churn + wait)
+  // Docs indicate API key can be provided via query param `apikey`.
+  let queue = null;
+  if (apiKey) {
+    try {
+      const u = new URL("https://beaconcha.in/api/v1/validators/queue");
+      u.searchParams.set("apikey", apiKey);
+
+      const r = await fetch(u.toString(), { headers: hdrs() });
+      if (r.ok) {
+        const j = await r.json();
+        // beaconcha.in uses a common envelope: { status: "OK", data: ... }
+        queue = j?.data ?? null;
+      }
+    } catch (_) {
+      // ignore; we'll fall back
+    }
+  }
+
+  // 2) Network stats + fallback queue parsing from validatorqueue.com (public page)
+  const res = await fetch("https://validatorqueue.com/?nocache=" + Date.now(), {
+    headers: {
+      ...hdrs(),
+      "cache-control": "no-cache",
+      pragma: "no-cache",
+    },
+    redirect: "follow",
+  });
+  if (!res.ok) throw new Error(`validatorqueue_bad_status_${res.status}`);
+
+  const html = await res.text();
+  const text = toPlainText(html);
+
+  // If the page content is not what we expect (e.g., bot challenge), fail fast.
+  if (
+    !/Active\s+Validators\s*:/i.test(text) &&
+    !/Ethereum\s+Validator\s+Queue/i.test(text)
+  ) {
+    throw new Error("validatorqueue_unexpected_content");
+  }
+
+  // Network
+  const activeValidators = pickNumber(
+    text,
+    /Active\s+Validators\s*:\s*([0-9,]+)/i
+  );
+  const stakedEthM = pickText(text, /Staked\s+ETH\s*:\s*([0-9.]+)\s*M/i); // e.g. 36.5M
+  const apr = pickNumber(text, /APR\s*:\s*([0-9.]+)\s*%/i);
 
   // Entry queue section
-  const entryEth = pickNumber(text, /Entry Queue[\s\S]*?ETH:\s*([0-9,]+)/i);
-  const entryWait = pickText(text, /Entry Queue[\s\S]*?Wait:\s*([0-9a-z ,]+)\s*/i);
-  const entryChurn = pickText(text, /Entry Queue[\s\S]*?Churn:\s*([0-9/]+\/epoch)/i)
-    ?? pickText(text, /Churn:\s*([0-9/]+\/epoch)/i);
+  const entryEth =
+    pickNumber(text, /Entry\s+Queue[\s\S]*?ETH\s*:\s*([0-9,]+)/i) ??
+    pickNumber(
+      text,
+      /Deposit\s+Queue[\s\S]*?Queued\s+ETH\s*:\s*([0-9,]+)/i
+    );
+  const entryWait =
+    pickText(text, /Entry\s+Queue[\s\S]*?Wait\s*:\s*([0-9a-z ,]+)\s*/i) ??
+    pickText(
+      text,
+      /Deposit\s+Queue[\s\S]*?Estimated\s+Wait\s+Time\s*:\s*([0-9a-z ,]+)\s*/i
+    );
+  const entryChurn =
+    pickText(
+      text,
+      /Entry\s+Queue[\s\S]*?Churn\s*:\s*([0-9/]+\s*\/\s*epoch)/i
+    ) ??
+    pickText(
+      text,
+      /Churn\s*Limit\s+per\s+Epoch\s*:\s*([0-9,]+)\s*ETH/i
+    ) ??
+    pickText(text, /Churn\s*:\s*([0-9/]+\s*\/\s*epoch)/i);
 
   // Exit queue section
-  const exitEth = pickNumber(text, /Exit Queue[\s\S]*?ETH:\s*([0-9,]+)/i);
-  const exitWait = pickText(text, /Exit Queue[\s\S]*?Wait:\s*([0-9a-z ,]+)\s*/i);
-  const exitChurn = pickText(text, /Exit Queue[\s\S]*?Churn:\s*([0-9/]+\/epoch)/i);
+  const exitEth =
+    pickNumber(text, /Exit\s+Queue[\s\S]*?ETH\s*:\s*([0-9,]+)/i) ??
+    pickNumber(text, /Withdrawal\s+Queue[\s\S]*?Queued\s+ETH\s*:\s*([0-9,]+)/i);
+  const exitWait =
+    pickText(text, /Exit\s+Queue[\s\S]*?Wait\s*:\s*([0-9a-z ,]+)\s*/i) ??
+    pickText(
+      text,
+      /Withdrawal\s+Queue[\s\S]*?Estimated\s+Wait\s+Time\s*:\s*([0-9a-z ,]+)\s*/i
+    );
+  const exitChurn = pickText(
+    text,
+    /Exit\s+Queue[\s\S]*?Churn\s*:\s*([0-9/]+\s*\/\s*epoch)/i
+  );
 
-  const churnLimit = entryChurn || exitChurn || null;
+  const churnLimit = clean(entryChurn || exitChurn || "");
+
+  // If beaconcha queue API worked, allow it to override queue-specific fields.
+  // We keep parsing fallback values in place because queue API field names can change.
+  const entryQueue =
+    formatQueue(queue, "entry") ??
+    ((entryEth || entryWait)
+      ? `${entryEth ?? "—"} ETH${entryWait ? ` • ${clean(entryWait)}` : ""}`
+      : null);
+  const exitQueue =
+    formatQueue(queue, "exit") ??
+    ((exitEth || exitWait)
+      ? `${exitEth ?? "—"} ETH${exitWait ? ` • ${clean(exitWait)}` : ""}`
+      : null);
+  const churnOut = formatChurn(queue) ?? (churnLimit ? churnLimit : null);
 
   return {
     chain: "ethereum",
     activeValidators: activeValidators ?? null,
     totalStaked: stakedEthM ? `${stakedEthM}M ETH` : null,
-    apr: (apr ?? null),
-
-    entryQueue: (entryEth || entryWait)
-      ? `${entryEth ?? "—"} ETH${entryWait ? ` • ${clean(entryWait)}` : ""}`
-      : null,
-
-    exitQueue: (exitEth || exitWait)
-      ? `${exitEth ?? "—"} ETH${exitWait ? ` • ${clean(exitWait)}` : ""}`
-      : null,
-
-    churnLimit: churnLimit ? clean(churnLimit) : null,
+    apr: apr ?? null,
+    entryQueue,
+    exitQueue,
+    churnLimit: churnOut,
     updatedAt: Date.now(),
-    source: "validatorqueue.com (beaconcha.in)",
+    source: apiKey
+      ? "beaconcha.in API + validatorqueue.com"
+      : "validatorqueue.com (beaconcha.in)",
   };
 }
 
-/**
- * AVAX GLOBAL VALIDATOR STATS (PRIMARY NETWORK)
- * Source: AvaCloud / Glacier Data API "List validators"
- * Auth header required: x-glacier-api-key
- * We compute:
- * 1) Active validators (count)
- * 2) Total staked (sum(amountStaked) across active validators)
- *
- * NOTE: Avalanche does not have ETH-style entry/exit queues publicly in the same way.
- * We keep entry/exit/churn as "—" unless you specify the exact metric source you want.
- */
 async function getAvalancheValidatorStats({ GLACIER_KEY } = {}) {
-  if (!GLACIER_KEY) throw new Error("missing_GLACIER_API_KEY");
+  // Avalanche global validator stats are sourced from Glacier (Avalanche official API)
+  // using the provided GLACIER_API_KEY (env). If missing, we still try (some endpoints may be public).
+  const key = GLACIER_KEY || null;
 
-  const base = "https://glacier-api.avax.network";
-  const path = "/v1/networks/mainnet/validators";
-  const pageSize = 100;
+  // We fetch:
+  // - active validators count
+  // - total staked (AVAX)
+  // - staking APR (if available)
+  // - entry queue (best-effort: pending validators)
+  // - exit queue (best-effort)
+  // - churn limit (best-effort / not always exposed on Avalanche)
 
-  let nextPageToken = null;
-  let count = 0;
-  let totalStaked_nAVAX = 0n;
+  // NOTE: Glacier endpoints and shapes can vary by version; we keep this defensive.
 
-  // paginate through active validators
-  for (let i = 0; i < 50; i++) { // safety cap
-    const u = new URL(base + path);
-    u.searchParams.set("validationStatus", "active");
-    u.searchParams.set("pageSize", String(pageSize));
-    if (nextPageToken) u.searchParams.set("pageToken", nextPageToken);
+  const headers = {
+    ...hdrs(),
+    ...(key ? { "x-glacier-api-key": key } : {}),
+  };
 
-    const res = await fetch(u.toString(), {
-      headers: {
-        "x-glacier-api-key": GLACIER_KEY,
-        "accept": "application/json",
-      },
-    });
+  // Try a few common Glacier paths in order until we get something useful.
+  const tryUrls = [
+    "https://glacier-api.avax.network/v1/networks/mainnet/validators",
+    "https://glacier-api.avax.network/v1/networks/mainnet/staking/validators",
+    "https://glacier-api.avax.network/v2/networks/mainnet/validators",
+  ];
 
-    if (!res.ok) {
-      throw new Error(`glacier_bad_status_${res.status}`);
+  let data = null;
+  for (const u of tryUrls) {
+    try {
+      const r = await fetch(u, { headers });
+      if (!r.ok) continue;
+      const j = await r.json();
+      data = j;
+      break;
+    } catch (_) {
+      // continue
     }
-
-    const j = await res.json();
-    const validators = Array.isArray(j?.validators) ? j.validators : [];
-
-    for (const v of validators) {
-      count += 1;
-
-      // amountStaked is a string; docs use nAVAX in query params; amountStaked also comes as string. :contentReference[oaicite:2]{index=2}
-      // We treat it as nAVAX (1 AVAX = 1e9 nAVAX).
-      const amt = safeBigInt(v?.amountStaked);
-      totalStaked_nAVAX += amt;
-    }
-
-    nextPageToken = j?.nextPageToken || null;
-    if (!nextPageToken) break;
   }
 
-  const totalStaked_AVAX = formatAVAXfromnAVAX(totalStaked_nAVAX);
+  // If Glacier didn't respond with validator list data, return null fields (UI will show —)
+  if (!data) {
+    return {
+      chain: "avalanche",
+      activeValidators: null,
+      totalStaked: null,
+      apr: null,
+      entryQueue: null,
+      exitQueue: null,
+      churnLimit: null,
+      updatedAt: Date.now(),
+      source: "glacier-api.avax.network",
+    };
+  }
 
+  // Extract validator list (shape varies)
+  const validators =
+    data?.validators ||
+    data?.data?.validators ||
+    data?.data ||
+    data?.items ||
+    [];
+
+  // active validators = count of validators in "active"/"current" state if present; else list length
+  let activeValidators = null;
+  if (Array.isArray(validators)) {
+    const active = validators.filter((v) => {
+      const st = (v?.status || v?.state || "").toString().toLowerCase();
+      if (!st) return true; // if no status provided, count it
+      return st.includes("active") || st.includes("current") || st === "validated";
+    });
+    activeValidators = active.length;
+  }
+
+  // total staked: sum stake or weight fields
+  let totalStakedNAVAX = null;
+  if (Array.isArray(validators)) {
+    let sum = 0n;
+    for (const v of validators) {
+      const w =
+        v?.stakeAmount ??
+        v?.stake ??
+        v?.weight ??
+        v?.delegatorWeight ??
+        v?.stakedAmount ??
+        null;
+      const bi = safeBigInt(w);
+      if (bi != null) sum += bi;
+    }
+    if (sum > 0n) totalStakedNAVAX = sum; // nAVAX
+  }
+
+  // APR: try to fetch a dedicated APR endpoint, otherwise null
+  let apr = null;
+  const aprUrls = [
+    "https://glacier-api.avax.network/v1/networks/mainnet/staking/apr",
+    "https://glacier-api.avax.network/v1/networks/mainnet/apr",
+    "https://glacier-api.avax.network/v2/networks/mainnet/staking/apr",
+  ];
+  for (const u of aprUrls) {
+    try {
+      const r = await fetch(u, { headers });
+      if (!r.ok) continue;
+      const j = await r.json();
+      const val =
+        j?.apr ??
+        j?.data?.apr ??
+        j?.data?.value ??
+        j?.value ??
+        j?.data ??
+        null;
+      const n = typeof val === "string" ? Number(val) : typeof val === "number" ? val : null;
+      if (Number.isFinite(n)) {
+        apr = n;
+        break;
+      }
+    } catch (_) {
+      // continue
+    }
+  }
+
+  // Entry/exit queue + churn limit are not universally exposed on Avalanche via Glacier.
+  // Keep these as null for now (wireframe boxes can remain empty or display "—").
   return {
     chain: "avalanche",
-    activeValidators: count || null,
-    totalStaked: totalStaked_AVAX ? `${totalStaked_AVAX} AVAX` : null,
-    apr: null,
-    entryQueue: "—",
-    exitQueue: "—",
-    churnLimit: "—",
+    activeValidators: activeValidators ?? null,
+    totalStaked: totalStakedNAVAX != null ? `${formatAVAXfromnAVAX(totalStakedNAVAX)} AVAX` : null,
+    apr: apr ?? null,
+    entryQueue: null,
+    exitQueue: null,
+    churnLimit: null,
     updatedAt: Date.now(),
-    source: "AvaCloud/Glacier Data API (Primary Network validators)",
+    source: "glacier-api.avax.network",
   };
+}
+
+function toPlainText(html) {
+  return String(html || "")
+    .replace(/<script[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style[\s\S]*?<\/style>/gi, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+// Best-effort parsing of beaconcha.in queue payload.
+// We intentionally support multiple possible field names because the v1 payload is not documented
+// in the public v2 reference pages.
+function formatQueue(queue, kind /* 'entry'|'exit' */) {
+  if (!queue) return null;
+
+  // common patterns seen in queue trackers: { entry: { eth: ..., wait: ... }, exit: ... }
+  const q = queue?.[kind] || queue?.[kind + "Queue"] || null;
+  if (q && typeof q === "object") {
+    const eth = q.eth ?? q.queuedEth ?? q.amount ?? q.total ?? null;
+    const wait = q.wait ?? q.estimatedWaitTime ?? q.estimated_wait_time ?? null;
+    const ethNum =
+      typeof eth === "number"
+        ? eth
+        : typeof eth === "string"
+        ? Number(String(eth).replace(/,/g, ""))
+        : null;
+    const ethOut = Number.isFinite(ethNum)
+      ? ethNum.toLocaleString("en-US")
+      : eth
+      ? String(eth)
+      : "—";
+    const waitOut = wait ? clean(String(wait)) : null;
+    return `${ethOut} ETH${waitOut ? ` • ${waitOut}` : ""}`;
+  }
+
+  // alternative: flat keys
+  const ethFlat = queue?.[kind + "Eth"] ?? queue?.[kind + "_eth"] ?? null;
+  const waitFlat = queue?.[kind + "Wait"] ?? queue?.[kind + "_wait"] ?? null;
+  if (ethFlat || waitFlat) {
+    const ethOut = ethFlat ? String(ethFlat) : "—";
+    const waitOut = waitFlat ? clean(String(waitFlat)) : null;
+    return `${ethOut} ETH${waitOut ? ` • ${waitOut}` : ""}`;
+  }
+
+  return null;
+}
+
+function formatChurn(queue) {
+  if (!queue) return null;
+  const churn =
+    queue?.churnLimit ??
+    queue?.churn_limit ??
+    queue?.churn ??
+    queue?.churnPerEpoch ??
+    queue?.churn_per_epoch ??
+    null;
+
+  if (churn == null) return null;
+
+  // If churn is numeric ETH-per-epoch, normalize to "X/epoch"
+  if (typeof churn === "number") return `${churn}/epoch`;
+  const s = String(churn).trim();
+  if (!s) return null;
+  if (/\/\s*epoch/i.test(s)) return clean(s.replace(/\s+/g, ""));
+  return clean(s);
 }
 
 function pickText(src, re) {
-  const m = src.match(re);
-  return m ? String(m[1] ?? "").trim() : null;
+  const m = re.exec(src || "");
+  return m && m[1] != null ? String(m[1]).trim() : null;
 }
 
 function pickNumber(src, re) {
-  const m = src.match(re);
-  if (!m) return null;
-  const raw = String(m[1] ?? "").replace(/,/g, "").trim();
-  const n = Number(raw);
+  const s = pickText(src, re);
+  if (!s) return null;
+  const n = Number(String(s).replace(/,/g, ""));
   return Number.isFinite(n) ? n : null;
 }
 
 function clean(s) {
-  return String(s).replace(/\s+/g, " ").trim();
+  return String(s || "")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function safeBigInt(v) {
   try {
-    if (v === null || v === undefined) return 0n;
+    if (v == null) return null;
+    if (typeof v === "bigint") return v;
+    if (typeof v === "number") {
+      if (!Number.isFinite(v)) return null;
+      return BigInt(Math.trunc(v));
+    }
     const s = String(v).trim();
-    if (!s) return 0n;
-    // strip decimals if any (shouldn't happen, but just in case)
-    const t = s.includes(".") ? s.split(".")[0] : s;
-    return BigInt(t);
+    if (!s) return null;
+    // allow commas
+    return BigInt(s.replace(/,/g, ""));
   } catch {
-    return 0n;
+    return null;
   }
 }
 
-// nAVAX is nano-AVAX (1e9). Docs use nAVAX in parameters and constraints align with 1e9. :contentReference[oaicite:3]{index=3}
 function formatAVAXfromnAVAX(n) {
-  const denom = 1000000000n; // 1e9
+  // n is bigint in nAVAX (1e9)
+  const denom = 1_000_000_000n;
   const whole = n / denom;
   const frac = n % denom;
 
-  // show 2 decimals (truncate)
+  // show 2 decimals
   const frac2 = (frac * 100n) / denom;
   const s = `${whole.toString()}.${frac2.toString().padStart(2, "0")}`;
 
