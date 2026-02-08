@@ -77,10 +77,11 @@ body{
   }
 
   .hero-grid{
-    grid-template-columns: 1fr;
-    gap: 14px;
-  }
-
+  display:grid;
+  grid-template-columns: minmax(360px, 50%) 1fr; /* left max ~1/2, right grows */
+  gap:18px;
+  align-items:start;
+}
   .rail-grid{
     grid-template-columns: 1fr;
     gap: 14px;
@@ -107,8 +108,8 @@ body{
   border:1px solid var(--line);
   border-radius: 22px;
   padding: 18px 18px 14px;
-  box-shadow: 0 0 0 1px rgba(0,255,170,.08) inset, 0 0 55px var(--glow);
-  background: linear-gradient(180deg, rgba(0,255,170,.06), rgba(0,0,0,0));
+  box-shadow: 0 0 0 1px rgba(0,255,170,.08) inset; /* remove outer glow */
+  background: rgba(0,0,0,.18);                      /* remove gradient glow */
 }
 
 .brand{
@@ -232,6 +233,17 @@ body{
   display:flex;
   flex-direction:column;
   gap:12px;
+}
+
+/* Center titles on ETH / AVAX data cards */
+.wire-card--data .wire-head{
+  padding: 12px 0 10px;
+  border-bottom: 1px solid var(--line2);
+}
+
+.wire-card--data .wire-title{
+  display:block;
+  text-align:center;
 }
 
 .wire-badge{
@@ -372,18 +384,20 @@ body{
 /* Footer */
 .site-foot{
   width:100%;
-  margin: 10px 0 22px;
+  margin-top:auto;           /* keep footer attached to bottom of the page */
+  margin-bottom: 0;
+  padding: 14px 0 22px;
 }
 
 .foot-inner{
-  width: calc(100vw - 72px); /* same outer margins as wrap */
-  max-width: none;
+  width:min(1400px, 94vw);   /* match main wrap width */
   margin: 0 auto;
   display:flex;
   flex-direction:column;
   gap: 10px;
   align-items:center;
   justify-content:center;
+  text-align:center;         /* ensure centered */
   color: var(--fg);
 }
 
