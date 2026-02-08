@@ -232,3 +232,38 @@ body{
   letter-spacing: .02em;
   white-space:nowrap;
 }
+/* CHART cards (bottom 2) */
+.wire-card--charts{
+  display:flex;
+  flex-direction:column;
+  gap: 10px;
+}
+
+.wire-charts{
+  display:flex;
+  flex-direction:column;
+  gap: 10px;
+  padding-top: 12px; /* breathing room under title */
+}
+
+.chart-block{
+  display:flex;
+  flex-direction:column;
+  gap: 6px;
+}
+
+.chart-label{
+  font-size: 11px;
+  letter-spacing: .14em;
+  color: rgba(0,255,170,.85);
+  text-transform: uppercase;
+}
+
+.chart-canvas{
+  width: 100%;
+  height: 110px;
+  border: 1px solid var(--line2);
+  border-radius: 14px;
+  background: rgba(0,0,0,.18);
+  box-shadow: 0 0 22px var(--glow2);
+}
