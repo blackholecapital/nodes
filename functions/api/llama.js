@@ -47,12 +47,9 @@ function hdrs() {
 }
 
 async function getEthereumValidatorStats({ BEACON_KEY } = {}) {
-  // Prefer the official beaconcha.in API (less brittle than HTML parsing).
-  // If the API call fails (missing key or rate limit), fall back to validatorqueue.com parsing.
   const apiKey = BEACON_KEY || null;
 
-  // 1) Try beaconcha.in V1 queue endpoint (entry/exit + churn + wait)
-  // Docs indicate API key can be provided via query param `apikey`.
+  // 1) Try beaconcha.in queue endpoint (entry/exit + churn + wait)
   let queue = null;
   if (apiKey) {
     try {
@@ -62,7 +59,6 @@ async function getEthereumValidatorStats({ BEACON_KEY } = {}) {
       const r = await fetch(u.toString(), { headers: hdrs() });
       if (r.ok) {
         const j = await r.json();
-        // beaconcha.in uses a common envelope: { status: "OK", data: ... }
         queue = j?.data ?? null;
       }
     } catch (_) {
@@ -70,7 +66,7 @@ async function getEthereumValidatorStats({ BEACON_KEY } = {}) {
     }
   }
 
-  // 2) Network stats + fallback queue parsing from validatorqueue.com (public page)
+  // 2) Network stats + fallback queue parsing from validatorqueue.com
   const res = await fetch("https://validatorqueue.com/?nocache=" + Date.now(), {
     headers: {
       ...hdrs(),
@@ -84,7 +80,6 @@ async function getEthereumValidatorStats({ BEACON_KEY } = {}) {
   const html = await res.text();
   const text = toPlainText(html);
 
-  // If the page content is not what we expect (e.g., bot challenge), fail fast.
   if (
     !/Active\s+Validators\s*:/i.test(text) &&
     !/Ethereum\s+Validator\s+Queue/i.test(text)
@@ -92,27 +87,27 @@ async function getEthereumValidatorStats({ BEACON_KEY } = {}) {
     throw new Error("validatorqueue_unexpected_content");
   }
 
-  // Network
   const activeValidators = pickNumber(
     text,
     /Active\s+Validators\s*:\s*([0-9,]+)/i
   );
-  const stakedEthM = pickText(text, /Staked\s+ETH\s*:\s*([0-9.]+)\s*M/i); // e.g. 36.5M
+  const stakedEthM = pickText(text, /Staked\s+ETH\s*:\s*([0-9.]+)\s*M/i);
   const apr = pickNumber(text, /APR\s*:\s*([0-9.]+)\s*%/i);
 
-  // Entry queue section
   const entryEth =
     pickNumber(text, /Entry\s+Queue[\s\S]*?ETH\s*:\s*([0-9,]+)/i) ??
     pickNumber(
       text,
       /Deposit\s+Queue[\s\S]*?Queued\s+ETH\s*:\s*([0-9,]+)/i
     );
+
   const entryWait =
     pickText(text, /Entry\s+Queue[\s\S]*?Wait\s*:\s*([0-9a-z ,]+)\s*/i) ??
     pickText(
       text,
       /Deposit\s+Queue[\s\S]*?Estimated\s+Wait\s+Time\s*:\s*([0-9a-z ,]+)\s*/i
     );
+
   const entryChurn =
     pickText(
       text,
@@ -124,16 +119,20 @@ async function getEthereumValidatorStats({ BEACON_KEY } = {}) {
     ) ??
     pickText(text, /Churn\s*:\s*([0-9/]+\s*\/\s*epoch)/i);
 
-  // Exit queue section
   const exitEth =
     pickNumber(text, /Exit\s+Queue[\s\S]*?ETH\s*:\s*([0-9,]+)/i) ??
-    pickNumber(text, /Withdrawal\s+Queue[\s\S]*?Queued\s+ETH\s*:\s*([0-9,]+)/i);
+    pickNumber(
+      text,
+      /Withdrawal\s+Queue[\s\S]*?Queued\s+ETH\s*:\s*([0-9,]+)/i
+    );
+
   const exitWait =
     pickText(text, /Exit\s+Queue[\s\S]*?Wait\s*:\s*([0-9a-z ,]+)\s*/i) ??
     pickText(
       text,
       /Withdrawal\s+Queue[\s\S]*?Estimated\s+Wait\s+Time\s*:\s*([0-9a-z ,]+)\s*/i
     );
+
   const exitChurn = pickText(
     text,
     /Exit\s+Queue[\s\S]*?Churn\s*:\s*([0-9/]+\s*\/\s*epoch)/i
@@ -141,18 +140,18 @@ async function getEthereumValidatorStats({ BEACON_KEY } = {}) {
 
   const churnLimit = clean(entryChurn || exitChurn || "");
 
-  // If beaconcha queue API worked, allow it to override queue-specific fields.
-  // We keep parsing fallback values in place because queue API field names can change.
   const entryQueue =
     formatQueue(queue, "entry") ??
     ((entryEth || entryWait)
       ? `${entryEth ?? "—"} ETH${entryWait ? ` • ${clean(entryWait)}` : ""}`
       : null);
+
   const exitQueue =
     formatQueue(queue, "exit") ??
     ((exitEth || exitWait)
       ? `${exitEth ?? "—"} ETH${exitWait ? ` • ${clean(exitWait)}` : ""}`
       : null);
+
   const churnOut = formatChurn(queue) ?? (churnLimit ? churnLimit : null);
 
   return {
@@ -173,12 +172,11 @@ async function getEthereumValidatorStats({ BEACON_KEY } = {}) {
 async function getAvalancheValidatorStats({ GLACIER_KEY } = {}) {
   if (!GLACIER_KEY) throw new Error("missing_GLACIER_API_KEY");
 
-  // Use official "Get network details" endpoint (validator + delegator stats)
-  // Docs: GET https://data-api.avax.network/v1/networks/mainnet  (x-glacier-api-key) :contentReference[oaicite:1]{index=1}
+  // Network details (validator + delegator stats)
   const res = await fetch("https://data-api.avax.network/v1/networks/mainnet", {
     headers: {
       "x-glacier-api-key": GLACIER_KEY,
-      "accept": "application/json",
+      accept: "application/json",
     },
   });
 
@@ -191,16 +189,13 @@ async function getAvalancheValidatorStats({ GLACIER_KEY } = {}) {
   const vd = j?.validatorDetails || {};
   const dd = j?.delegatorDetails || {};
 
-  // These values are returned as strings in the API schema :contentReference[oaicite:2]{index=2}
-  // We treat amount strings as nAVAX if numeric (consistent with Avalanche staking unit usage).
   const validatorCount = Number(vd?.validatorCount);
-  const totalAmountStaked_nAVAX = safeBigInt(vd?.totalAmountStaked);
-  const annualReward_nAVAX = safeBigInt(vd?.estimatedAnnualStakingReward);
+  const totalAmountStaked_nAVAX = safeBigInt(vd?.totalAmountStaked) ?? 0n;
+  const annualReward_nAVAX = safeBigInt(vd?.estimatedAnnualStakingReward) ?? 0n;
 
   const delegatorCount = Number(dd?.delegatorCount);
-  const delegatorStaked_nAVAX = safeBigInt(dd?.totalAmountStaked);
+  const delegatorStaked_nAVAX = safeBigInt(dd?.totalAmountStaked) ?? 0n;
 
-  // APR = estimatedAnnualStakingReward / totalAmountStaked * 100
   const apr = calcAprPct(annualReward_nAVAX, totalAmountStaked_nAVAX);
 
   const totalStaked_AVAX =
@@ -219,9 +214,9 @@ async function getAvalancheValidatorStats({ GLACIER_KEY } = {}) {
     chain: "avalanche",
     activeValidators: Number.isFinite(validatorCount) ? validatorCount : null,
     totalStaked: totalStaked_AVAX ? `${totalStaked_AVAX} AVAX` : null,
-    apr: apr,
+    apr: apr ?? null,
 
-    // Reuse existing 6-slot UI fields for 3 extra top metrics
+    // 3 extra top metrics (mapped into your 6 slots)
     entryQueue: Number.isFinite(delegatorCount) ? delegatorCount.toLocaleString("en-US") : "—",
     exitQueue: delegatorStaked_AVAX ? `${delegatorStaked_AVAX} AVAX` : "—",
     churnLimit: stakingRatio ? stakingRatio : "—",
@@ -231,14 +226,12 @@ async function getAvalancheValidatorStats({ GLACIER_KEY } = {}) {
   };
 }
 
-// APR helper: returns Number (percent) or null
 function calcAprPct(annualReward_nAVAX, totalStaked_nAVAX) {
   try {
     if (annualReward_nAVAX <= 0n) return null;
     if (totalStaked_nAVAX <= 0n) return null;
 
-    // percent with 2 decimals: (reward/staked)*100
-    // scaled = reward * 10000 / staked  => 2 decimals percent
+    // scaled = reward * 10000 / staked  => percent with 2 decimals
     const scaled = (annualReward_nAVAX * 10000n) / totalStaked_nAVAX;
     const whole = Number(scaled / 100n);
     const frac = Number(scaled % 100n);
@@ -246,103 +239,6 @@ function calcAprPct(annualReward_nAVAX, totalStaked_nAVAX) {
   } catch {
     return null;
   }
-}
-
-
-  // If Glacier didn't respond with validator list data, return null fields (UI will show —)
-  if (!data) {
-    return {
-      chain: "avalanche",
-      activeValidators: null,
-      totalStaked: null,
-      apr: null,
-      entryQueue: null,
-      exitQueue: null,
-      churnLimit: null,
-      updatedAt: Date.now(),
-      source: "glacier-api.avax.network",
-    };
-  }
-
-  // Extract validator list (shape varies)
-  const validators =
-    data?.validators ||
-    data?.data?.validators ||
-    data?.data ||
-    data?.items ||
-    [];
-
-  // active validators = count of validators in "active"/"current" state if present; else list length
-  let activeValidators = null;
-  if (Array.isArray(validators)) {
-    const active = validators.filter((v) => {
-      const st = (v?.status || v?.state || "").toString().toLowerCase();
-      if (!st) return true; // if no status provided, count it
-      return st.includes("active") || st.includes("current") || st === "validated";
-    });
-    activeValidators = active.length;
-  }
-
-  // total staked: sum stake or weight fields
-  let totalStakedNAVAX = null;
-  if (Array.isArray(validators)) {
-    let sum = 0n;
-    for (const v of validators) {
-      const w =
-        v?.stakeAmount ??
-        v?.stake ??
-        v?.weight ??
-        v?.delegatorWeight ??
-        v?.stakedAmount ??
-        null;
-      const bi = safeBigInt(w);
-      if (bi != null) sum += bi;
-    }
-    if (sum > 0n) totalStakedNAVAX = sum; // nAVAX
-  }
-
-  // APR: try to fetch a dedicated APR endpoint, otherwise null
-  let apr = null;
-  const aprUrls = [
-    "https://glacier-api.avax.network/v1/networks/mainnet/staking/apr",
-    "https://glacier-api.avax.network/v1/networks/mainnet/apr",
-    "https://glacier-api.avax.network/v2/networks/mainnet/staking/apr",
-  ];
-  for (const u of aprUrls) {
-    try {
-      const r = await fetch(u, { headers });
-      if (!r.ok) continue;
-      const j = await r.json();
-      const val =
-        j?.apr ??
-        j?.data?.apr ??
-        j?.data?.value ??
-        j?.value ??
-        j?.data ??
-        null;
-      const n = typeof val === "string" ? Number(val) : typeof val === "number" ? val : null;
-      if (Number.isFinite(n)) {
-        apr = n;
-        break;
-      }
-    } catch (_) {
-      // continue
-    }
-  }
-
-  // Entry/exit queue + churn limit are not universally exposed on Avalanche via Glacier.
-  // Keep these as null for now (wireframe boxes can remain empty or display "—").
-  return {
-    chain: "avalanche",
-    activeValidators: activeValidators ?? null,
-    totalStaked: totalStakedNAVAX != null ? `${formatAVAXfromnAVAX(totalStakedNAVAX)} AVAX` : null,
-    apr: apr ?? null,
-    entryQueue: null,
-    exitQueue: null,
-    churnLimit: null,
-    updatedAt: Date.now(),
-    source: "glacier-api.avax.network",
-  };
 }
 
 function toPlainText(html) {
@@ -358,33 +254,31 @@ function toPlainText(html) {
     .trim();
 }
 
-// Best-effort parsing of beaconcha.in queue payload.
-// We intentionally support multiple possible field names because the v1 payload is not documented
-// in the public v2 reference pages.
-function formatQueue(queue, kind /* 'entry'|'exit' */) {
+function formatQueue(queue, kind) {
   if (!queue) return null;
 
-  // common patterns seen in queue trackers: { entry: { eth: ..., wait: ... }, exit: ... }
   const q = queue?.[kind] || queue?.[kind + "Queue"] || null;
   if (q && typeof q === "object") {
     const eth = q.eth ?? q.queuedEth ?? q.amount ?? q.total ?? null;
     const wait = q.wait ?? q.estimatedWaitTime ?? q.estimated_wait_time ?? null;
+
     const ethNum =
       typeof eth === "number"
         ? eth
         : typeof eth === "string"
         ? Number(String(eth).replace(/,/g, ""))
         : null;
+
     const ethOut = Number.isFinite(ethNum)
       ? ethNum.toLocaleString("en-US")
       : eth
       ? String(eth)
       : "—";
+
     const waitOut = wait ? clean(String(wait)) : null;
     return `${ethOut} ETH${waitOut ? ` • ${waitOut}` : ""}`;
   }
 
-  // alternative: flat keys
   const ethFlat = queue?.[kind + "Eth"] ?? queue?.[kind + "_eth"] ?? null;
   const waitFlat = queue?.[kind + "Wait"] ?? queue?.[kind + "_wait"] ?? null;
   if (ethFlat || waitFlat) {
@@ -407,9 +301,8 @@ function formatChurn(queue) {
     null;
 
   if (churn == null) return null;
-
-  // If churn is numeric ETH-per-epoch, normalize to "X/epoch"
   if (typeof churn === "number") return `${churn}/epoch`;
+
   const s = String(churn).trim();
   if (!s) return null;
   if (/\/\s*epoch/i.test(s)) return clean(s.replace(/\s+/g, ""));
@@ -444,7 +337,6 @@ function safeBigInt(v) {
     }
     const s = String(v).trim();
     if (!s) return null;
-    // allow commas
     return BigInt(s.replace(/,/g, ""));
   } catch {
     return null;
@@ -452,16 +344,13 @@ function safeBigInt(v) {
 }
 
 function formatAVAXfromnAVAX(n) {
-  // n is bigint in nAVAX (1e9)
   const denom = 1_000_000_000n;
   const whole = n / denom;
   const frac = n % denom;
 
-  // show 2 decimals
   const frac2 = (frac * 100n) / denom;
   const s = `${whole.toString()}.${frac2.toString().padStart(2, "0")}`;
 
-  // add commas to whole part
   const [w, f] = s.split(".");
   const withCommas = w.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
   return `${withCommas}.${f}`;
