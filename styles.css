@@ -52,8 +52,21 @@ body{
 }
 
 @media (max-width: 980px){
-  .hero-grid{ grid-template-columns: 1fr; }
-  .rail-grid{ grid-template-columns: 1fr; }
+  .wrap{
+    width: calc(100vw - 32px);
+    margin: 18px auto 12px;
+  }
+
+  /* FORCE SINGLE COLUMN RAIL */
+  .rail-grid{
+    grid-template-columns: 1fr !important;
+    gap: 14px;
+  }
+
+  .brand-frame,
+  .wire-card{
+    width: 100%;
+  }
 }
 
 @media (max-width: 760px){
