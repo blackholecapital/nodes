@@ -33,7 +33,7 @@
           <div class="meta">
             <div class="meta-item">
               <span class="meta-k">Refresh</span>
-              <span class="meta-v" id="refreshEvery">5:00</span>
+              <span class="meta-v" id="refreshEvery">1:00</span>
             </div>
             <div class="meta-item">
               <span class="meta-k">Last update</span>
@@ -46,38 +46,14 @@
           </div>
         </div>
 
-        <!-- EDIT MODE -->
         <div class="edit-wrap">
           <div class="edit-top">
-            <div class="edit-title">EDIT MODE</div>
-            <button class="btn" id="toggleEdit" type="button" aria-expanded="false">OPEN</button>
-          </div>
-
-          <div class="edit-panel" id="editPanel" hidden>
-            <div class="edit-grid">
-              <div class="edit-col">
-                <label class="edit-label" for="ethInput">Ethereum Validator Public Keys</label>
-                <textarea id="ethInput" class="edit-text" rows="6"
-                  placeholder="One per line or comma-separated&#10;Example:&#10;0xabc...&#10;0xdef..."></textarea>
-                <div class="edit-hint">Paste up to 4 for the main ETH panel.</div>
-              </div>
-
-              <div class="edit-col">
-                <label class="edit-label" for="avaxInput">Avalanche NodeIDs</label>
-                <textarea id="avaxInput" class="edit-text" rows="6"
-                  placeholder="One per line&#10;Example:&#10;NodeID-...&#10;NodeID-..."></textarea>
-                <div class="edit-hint">Paste up to 4 for the main AVAX panel.</div>
-              </div>
-            </div>
-
-            <div class="edit-actions">
-              <button class="btn btn-primary" id="saveApply" type="button">SAVE + APPLY</button>
-              <button class="btn" id="resetDefaults" type="button">RESET</button>
-              <div class="edit-msg" id="editMsg">—</div>
-            </div>
+            <div class="edit-title">NETWORK FEEDS</div>
+            <button class="btn" id="refreshAll" type="button">
+              REFRESH
+            </button>
           </div>
         </div>
-        <!-- /EDIT MODE -->
       </div>
     </header>
 
@@ -85,25 +61,21 @@
       <div class="main-stack">
         <section class="panel">
           <div class="panel-title">
-            <span class="chip">ETHEREUM</span>
-            <span class="panel-h">Validators</span>
-            <span class="panel-note">(4 slots)</span>
+            <span class="chip">DASHBOARD</span>
+            <span class="panel-h">Status</span>
+            <span class="panel-note">Layout-first</span>
           </div>
-          <div class="grid" id="ethGrid"></div>
-        </section>
 
-        <section class="panel">
-          <div class="panel-title">
-            <span class="chip">AVALANCHE</span>
-            <span class="panel-h">Validators</span>
-            <span class="panel-note">(4 slots)</span>
+          <div class="rows">
+            <div class="row"><span class="k">Mode</span><span class="v">Text-only (no charts)</span></div>
+            <div class="row"><span class="k">Removed</span><span class="v">All validator tracking UI and old DefiLlama boxes</span></div>
+            <div class="row"><span class="k">Next</span><span class="v">Wire ETH validator totals + % locked, then AVAX totals</span></div>
           </div>
-          <div class="grid" id="avaxGrid"></div>
         </section>
 
         <footer class="footer">
           <div class="footer-left">
-            <div class="tiny">Ethereum data powered by beaconcha.in</div>
+            <div class="tiny">Data sources: DefiLlama (via Cloudflare function)</div>
           </div>
           <div class="footer-right">
             <div class="tiny">© *** .xyz Labs ***</div>
@@ -111,68 +83,45 @@
         </footer>
       </div>
 
-      <!-- RIGHT SIDE: TEXT ONLY -->
-      <aside class="side-stack" aria-label="Network intelligence">
+      <!-- RIGHT RAIL: ONLY TWO BOXES (match BridgeCard example) -->
+      <aside class="side-stack" aria-label="Network metrics">
 
-        <!-- ETH DefiLlama (TEXT) -->
-        <section class="panel side-panel" id="ethTvlPanel">
-          <div class="panel-title">
-            <span class="chip">ETH</span>
-            <span class="panel-h">DeFiLlama TVL</span>
-            <span class="panel-note" id="ethTvlStatus">idle</span>
-          </div>
-
-          <div class="intel">
-            <div class="intel-live">
-              <div class="intel-live-top">
-                <div class="intel-live-title">TEXT FEED</div>
-                <button class="btn btn-sm" id="ethTvlRefresh" type="button">REFRESH</button>
-              </div>
-              <div class="intel-live-out" id="ethTvlOut">—</div>
+        <!-- ETH BOX -->
+        <section class="bridge-card" id="ethBridgeCard">
+          <div class="bridge-top">
+            <div class="bridge-title">* * * ETHEREUM * * *</div>
+            <div class="bridge-badges">
+              <div class="badge" id="ethBadge">SYNC</div>
             </div>
           </div>
+
+          <div class="bridge-wire"></div>
+
+          <div class="bridge-quote-mini" id="ethMini">
+            <!-- injected -->
+          </div>
+
+          <div class="bridge-status mono muted" id="ethStatus">loading…</div>
+          <div class="bridge-error mono muted" id="ethError" style="display:none;"></div>
         </section>
 
-        <!-- AVAX DefiLlama (TEXT) -->
-        <section class="panel side-panel" id="avaxTvlPanel">
-          <div class="panel-title">
-            <span class="chip">AVAX</span>
-            <span class="panel-h">DeFiLlama TVL</span>
-            <span class="panel-note" id="avaxTvlStatus">idle</span>
-          </div>
-
-          <div class="intel">
-            <div class="intel-live">
-              <div class="intel-live-top">
-                <div class="intel-live-title">TEXT FEED</div>
-                <button class="btn btn-sm" id="avaxTvlRefresh" type="button">REFRESH</button>
-              </div>
-              <div class="intel-live-out" id="avaxTvlOut">—</div>
+        <!-- AVAX BOX -->
+        <section class="bridge-card" id="avaxBridgeCard">
+          <div class="bridge-top">
+            <div class="bridge-title">* * * AVALANCHE * * *</div>
+            <div class="bridge-badges">
+              <div class="badge" id="avaxBadge">SYNC</div>
             </div>
           </div>
-        </section>
 
-        <!-- ETH Live Validator (TEXT) -->
-        <section class="panel side-panel" id="ethLivePanel">
-          <div class="panel-title">
-            <span class="chip">ETH</span>
-            <span class="panel-h">Live Validator</span>
-            <span class="panel-note" id="ethLiveStatus">idle</span>
+          <div class="bridge-wire"></div>
+
+          <div class="bridge-quote-mini" id="avaxMini">
+            <!-- injected -->
           </div>
 
-          <div class="intel">
-            <div class="intel-live">
-              <div class="intel-live-top">
-                <div class="intel-live-title">PUBLIC KEY TRACK</div>
-                <button class="btn btn-sm" id="ethPkApply" type="button">APPLY</button>
-              </div>
-
-              <label class="edit-label" for="ethPkInput">Validator Public Key</label>
-              <input id="ethPkInput" class="edit-text edit-input" type="text" placeholder="0x…" />
-
-              <div class="intel-live-out" id="ethPkOut">—</div>
-            </div>
-          </div>
+          <div class="bridge-status mono muted" id="avaxStatus">loading…</div>
+          <div class="bridge-error mono muted" id="avaxError" style="display:none;"></div>
         </section>
 
       </aside>
