@@ -46,17 +46,155 @@ function applyChain(prefix, data){
   setText(`${prefix}Churn`, data.churnLimit ?? "—");
 }
 
+function cssVar(name, fallback){
+  const v = getComputedStyle(document.documentElement).getPropertyValue(name);
+  return (v && v.trim()) ? v.trim() : fallback;
+}
+
+function setupCanvas(id){
+  const c = $(id);
+  if (!c) return null;
+  const dpr = window.devicePixelRatio || 1;
+  const rect = c.getBoundingClientRect();
+  const w = Math.max(1, Math.floor(rect.width));
+  const h = Math.max(1, Math.floor(rect.height));
+  // Only resize when needed (prevents flicker)
+  if (c.width !== Math.floor(w * dpr) || c.height !== Math.floor(h * dpr)){
+    c.width = Math.floor(w * dpr);
+    c.height = Math.floor(h * dpr);
+  }
+  const ctx = c.getContext("2d");
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, w, h);
+  return { ctx, w, h };
+}
+
+function drawLineChart(canvasId, points){
+  const c = setupCanvas(canvasId);
+  if (!c) return;
+  const { ctx, w, h } = c;
+
+  if (!Array.isArray(points) || points.length < 2){
+    return;
+  }
+
+  const pad = 10;
+  const xs = points.map(p => p.t);
+  const ys = points.map(p => p.v);
+
+  const minX = Math.min(...xs);
+  const maxX = Math.max(...xs);
+  const minY = Math.min(...ys);
+  const maxY = Math.max(...ys);
+
+  const line = cssVar("--line", "rgba(0,255,170,.45)");
+  const grid = cssVar("--line2", "rgba(0,255,170,.22)");
+
+  // subtle grid baseline
+  ctx.strokeStyle = grid;
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(pad, h - pad);
+  ctx.lineTo(w - pad, h - pad);
+  ctx.stroke();
+
+  const xFor = (x) => pad + ((x - minX) / Math.max(1, (maxX - minX))) * (w - pad*2);
+  const yFor = (y) => (h - pad) - ((y - minY) / Math.max(1, (maxY - minY))) * (h - pad*2);
+
+  ctx.strokeStyle = line;
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(xFor(points[0].t), yFor(points[0].v));
+  for (let i=1;i<points.length;i++){
+    ctx.lineTo(xFor(points[i].t), yFor(points[i].v));
+  }
+  ctx.stroke();
+}
+
+function drawCandles(canvasId, candles){
+  const c = setupCanvas(canvasId);
+  if (!c) return;
+  const { ctx, w, h } = c;
+
+  if (!Array.isArray(candles) || candles.length < 2){
+    return;
+  }
+
+  const pad = 10;
+  const line = cssVar("--line", "rgba(0,255,170,.45)");
+  const grid = cssVar("--line2", "rgba(0,255,170,.22)");
+  const fg = cssVar("--fg", "#bfffe6");
+
+  const lows = candles.map(c => c.l);
+  const highs = candles.map(c => c.h);
+  const minY = Math.min(...lows);
+  const maxY = Math.max(...highs);
+
+  const xStep = (w - pad*2) / Math.max(1, candles.length);
+  const candleW = Math.max(2, Math.floor(xStep * 0.6));
+
+  const yFor = (y) => (h - pad) - ((y - minY) / Math.max(1, (maxY - minY))) * (h - pad*2);
+
+  // baseline grid
+  ctx.strokeStyle = grid;
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(pad, h - pad);
+  ctx.lineTo(w - pad, h - pad);
+  ctx.stroke();
+
+  for (let i=0;i<candles.length;i++){
+    const cdl = candles[i];
+    const xMid = pad + xStep * i + xStep/2;
+
+    const yH = yFor(cdl.h);
+    const yL = yFor(cdl.l);
+    const yO = yFor(cdl.o);
+    const yC = yFor(cdl.c);
+
+    // wick
+    ctx.strokeStyle = line;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(xMid, yH);
+    ctx.lineTo(xMid, yL);
+    ctx.stroke();
+
+    // body
+    const top = Math.min(yO, yC);
+    const bot = Math.max(yO, yC);
+    const x0 = Math.floor(xMid - candleW/2);
+
+    ctx.fillStyle = (cdl.c >= cdl.o) ? fg : "rgba(0,0,0,.35)";
+    ctx.strokeStyle = line;
+    ctx.lineWidth = 1;
+
+    const bodyH = Math.max(1, bot - top);
+    ctx.fillRect(x0, top, candleW, bodyH);
+    ctx.strokeRect(x0 + 0.5, top + 0.5, candleW - 1, bodyH - 1);
+  }
+}
+
 async function refreshAll(){
   setText("uiStatus", "Syncing…");
 
   try{
-    const [eth, avax] = await Promise.all([
+    const [eth, avax, ethCharts, avaxCharts] = await Promise.all([
       fetchJson(`/api/llama?chain=ethereum`),
-      fetchJson(`/api/llama?chain=avalanche`)
+      fetchJson(`/api/llama?chain=avalanche`),
+      fetchJson(`/api/charts?chain=ethereum`),
+      fetchJson(`/api/charts?chain=avalanche`)
     ]);
 
     applyChain("eth", eth);
     applyChain("avax", avax);
+
+    // Charts (eye candy)
+    drawLineChart("ethTvlChart", ethCharts.tvl);
+    drawCandles("ethVolChart", ethCharts.volumeWeekly);
+
+    drawLineChart("avaxTvlChart", avaxCharts.tvl);
+    drawCandles("avaxVolChart", avaxCharts.volumeWeekly);
 
     const ts = eth.updatedAt || avax.updatedAt || Date.now();
     const d = new Date(ts);
