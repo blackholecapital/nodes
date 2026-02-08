@@ -10,8 +10,7 @@
   <div class="scanlines" aria-hidden="true"></div>
 
   <main class="wrap">
-
-    <!-- TOP ROW: GOT NODES box (left) + ETH/AVAX wire cards (right) -->
+    <!-- TOP ROW: GOT NODES box (left) + 4-card rail (right) -->
     <div class="hero-grid">
       <header class="top">
         <div class="brand-frame">
@@ -58,51 +57,102 @@
         </div>
       </header>
 
-      <!-- RIGHT SIDE, TOP-ALIGNED WITH GOT NODES BOX -->
-      <aside class="hero-side" aria-label="Network metrics">
+      <!-- RIGHT SIDE: 4 CARDS (2x2) like your screenshot -->
+      <aside class="hero-side" aria-label="Network cards">
+        <div class="rail-grid">
 
-        <!-- ETH BOX -->
-        <section class="bridge-card" id="ethBridgeCard">
-          <div class="bridge-top">
-            <div class="bridge-title">* * * ETHEREUM * * *</div>
-            <div class="bridge-badges">
-              <div class="badge" id="ethBadge">SYNC</div>
+          <!-- TOP LEFT CARD (ETH TVL) -->
+          <section class="bridge-card bridge-card--tall" id="cardEthTop">
+            <div class="bridge-top">
+              <div class="bridge-title">* * * ETHEREUM * * *</div>
+              <div class="bridge-badges">
+                <div class="badge" id="ethTopBadge">SYNC</div>
+              </div>
             </div>
-          </div>
 
-          <div class="bridge-wire"></div>
+            <div class="bridge-wire"></div>
 
-          <div class="bridge-quote-mini" id="ethMini">
-            <!-- injected -->
-          </div>
-
-          <div class="bridge-status mono muted" id="ethStatus">loading…</div>
-          <div class="bridge-error mono muted" id="ethError" style="display:none;"></div>
-        </section>
-
-        <!-- AVAX BOX -->
-        <section class="bridge-card" id="avaxBridgeCard">
-          <div class="bridge-top">
-            <div class="bridge-title">* * * AVALANCHE * * *</div>
-            <div class="bridge-badges">
-              <div class="badge" id="avaxBadge">SYNC</div>
+            <div class="bridge-quote-mini" id="ethTopMini">
+              <!-- injected -->
             </div>
-          </div>
 
-          <div class="bridge-wire"></div>
+            <!-- chart slot area (NO charts for now, just a frame) -->
+            <div class="bridge-frame">
+              <div class="bridge-frame-title">1Y TVL</div>
+              <div class="bridge-frame-note" id="ethTopFrameNote">—</div>
+            </div>
 
-          <div class="bridge-quote-mini" id="avaxMini">
-            <!-- injected -->
-          </div>
+            <div class="bridge-status mono muted" id="ethTopStatus">loading…</div>
+            <div class="bridge-error mono muted" id="ethTopError" style="display:none;"></div>
+          </section>
 
-          <div class="bridge-status mono muted" id="avaxStatus">loading…</div>
-          <div class="bridge-error mono muted" id="avaxError" style="display:none;"></div>
-        </section>
+          <!-- TOP RIGHT CARD (AVAX TVL) -->
+          <section class="bridge-card bridge-card--tall" id="cardAvaxTop">
+            <div class="bridge-top">
+              <div class="bridge-title">* * * AVALANCHE * * *</div>
+              <div class="bridge-badges">
+                <div class="badge" id="avaxTopBadge">SYNC</div>
+              </div>
+            </div>
 
+            <div class="bridge-wire"></div>
+
+            <div class="bridge-quote-mini" id="avaxTopMini">
+              <!-- injected -->
+            </div>
+
+            <div class="bridge-frame">
+              <div class="bridge-frame-title">1Y TVL</div>
+              <div class="bridge-frame-note" id="avaxTopFrameNote">—</div>
+            </div>
+
+            <div class="bridge-status mono muted" id="avaxTopStatus">loading…</div>
+            <div class="bridge-error mono muted" id="avaxTopError" style="display:none;"></div>
+          </section>
+
+          <!-- BOTTOM LEFT CARD (ETH TOKEN / text-only details placeholder) -->
+          <section class="bridge-card" id="cardEthBottom">
+            <div class="bridge-top">
+              <div class="bridge-title">* * * ETH TOKEN * * *</div>
+              <div class="bridge-badges">
+                <div class="badge" id="ethBottomBadge">SYNC</div>
+              </div>
+            </div>
+
+            <div class="bridge-wire"></div>
+
+            <div class="bridge-quote-mini" id="ethBottomMini">
+              <!-- injected -->
+            </div>
+
+            <div class="bridge-status mono muted" id="ethBottomStatus">loading…</div>
+            <div class="bridge-error mono muted" id="ethBottomError" style="display:none;"></div>
+          </section>
+
+          <!-- BOTTOM RIGHT CARD (AVAX TOKEN / text-only details placeholder) -->
+          <section class="bridge-card" id="cardAvaxBottom">
+            <div class="bridge-top">
+              <div class="bridge-title">* * * AVAX TOKEN * * *</div>
+              <div class="bridge-badges">
+                <div class="badge" id="avaxBottomBadge">SYNC</div>
+              </div>
+            </div>
+
+            <div class="bridge-wire"></div>
+
+            <div class="bridge-quote-mini" id="avaxBottomMini">
+              <!-- injected -->
+            </div>
+
+            <div class="bridge-status mono muted" id="avaxBottomStatus">loading…</div>
+            <div class="bridge-error mono muted" id="avaxBottomError" style="display:none;"></div>
+          </section>
+
+        </div>
       </aside>
     </div>
 
-    <!-- BELOW: your main content can stay single-column -->
+    <!-- BELOW: keep minimal content for now -->
     <div class="below-grid">
       <section class="panel">
         <div class="panel-title">
@@ -112,22 +162,21 @@
         </div>
 
         <div class="rows">
-          <div class="row"><span class="k">Mode</span><span class="v">Text-only (no charts)</span></div>
-          <div class="row"><span class="k">Removed</span><span class="v">All validator tracking UI and old DefiLlama boxes</span></div>
-          <div class="row"><span class="k">Next</span><span class="v">Wire ETH total metrics + % locked, then AVAX totals</span></div>
+          <div class="row"><span class="k">Mode</span><span class="v">Text-only cards (no charts)</span></div>
+          <div class="row"><span class="k">Goal</span><span class="v">4-card rail like example, aligned to GOT NODES</span></div>
+          <div class="row"><span class="k">Next</span><span class="v">Wire ETH totals + % locked and AVAX totals into top cards</span></div>
         </div>
       </section>
 
       <footer class="footer">
         <div class="footer-left">
-          <div class="tiny">Data sources: DefiLlama (via Cloudflare function)</div>
+          <div class="tiny">Data source will be DefiLlama (via Cloudflare function)</div>
         </div>
         <div class="footer-right">
           <div class="tiny">© *** .xyz Labs ***</div>
         </div>
       </footer>
     </div>
-
   </main>
 
   <script type="module" src="./app.js"></script>
