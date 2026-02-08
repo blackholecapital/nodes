@@ -6,19 +6,17 @@ export async function onRequest({ request, env }) {
     return json({ error: "missing_or_invalid_chain" }, 400);
   }
 
-  // You said your key is stored as VITE_LLAMA_API_KEY.
-  // DefiLlama Pro docs authenticate via URL path (pro-api.llama.fi/<KEY>/...),
-  // and do not document validator/queue endpoints. We keep the env read here
-  // only so it’s available if/when you provide a specific Pro endpoint later.
-  const LLAMA_KEY = env?.VITE_LLAMA_API_KEY;
+  const BEACON_KEY = env?.BEACONCHA_IN_API_KEY || null;
+  const GLACIER_KEY = env?.GLACIER_API_KEY || null;
+  const LLAMA_KEY = env?.VITE_LLAMA_API_KEY || null;
 
   try {
     if (chain === "ethereum") {
-      const data = await getEthereumValidatorStats({ LLAMA_KEY });
+      const data = await getEthereumValidatorStats({ BEACON_KEY, LLAMA_KEY });
       return json(data, 200);
     }
 
-    const data = await getAvalancheValidatorStats({ LLAMA_KEY });
+    const data = await getAvalancheValidatorStats({ GLACIER_KEY, LLAMA_KEY });
     return json(data, 200);
 
   } catch (e) {
@@ -39,157 +37,181 @@ function json(obj, status = 200) {
   });
 }
 
-/**
- * ETH source: validatorqueue.com (public dashboard)
- * Metrics:
- * - Active Validators
- * - Staked ETH
- * - APR
- * - Entry Queue (ETH + wait)
- * - Exit Queue (ETH + wait)
- * - Churn
- */
-async function getEthereumValidatorStats({ LLAMA_KEY } = {}) {
-  const res = await fetch("https://validatorqueue.com/", {
-    headers: {
-      "user-agent": "Mozilla/5.0 (gotnodes.xyz; +https://gotnodes.xyz)",
-      "accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-      "accept-language": "en-US,en;q=0.9",
-      // harmless signal header (does not claim to be DefiLlama auth)
-      ...(LLAMA_KEY ? { "x-llama-key-present": "1" } : {}),
-    },
-  });
-  if (!res.ok) throw new Error(`validatorqueue_bad_status_${res.status}`);
-  const html = await res.text();
-
-  const activeValidators =
-    pickNumber(html, /Active Validators:\s*<\/[^>]+>\s*([0-9,]+)/i) ??
-    pickNumber(html, /Active Validators:\s*([0-9,]+)/i);
-
-  const stakedEth =
-    pickText(html, /Staked ETH:\s*<\/[^>]+>\s*([0-9.,]+M)/i) ??
-    pickText(html, /Staked ETH:\s*([0-9.,]+M)/i);
-
-  const apr =
-    pickNumber(html, /APR:\s*<\/[^>]+>\s*([0-9.]+)%/i) ??
-    pickNumber(html, /APR:\s*([0-9.]+)%/i);
-
-  const entryEth =
-    pickText(html, /Entry Queue[\s\S]*?ETH:\s*<\/[^>]+>\s*([0-9,]+)/i) ??
-    pickText(html, /Entry Queue[\s\S]*?ETH:\s*([0-9,]+)/i);
-
-  const entryWait =
-    pickText(html, /Entry Queue[\s\S]*?Wait:\s*<\/[^>]+>\s*([^<\n\r]+)/i) ??
-    pickText(html, /Entry Queue[\s\S]*?Wait:\s*([^<\n\r]+)/i);
-
-  const exitEth =
-    pickText(html, /Exit Queue[\s\S]*?ETH:\s*<\/[^>]+>\s*([0-9,]+)/i) ??
-    pickText(html, /Exit Queue[\s\S]*?ETH:\s*([0-9,]+)/i);
-
-  const exitWait =
-    pickText(html, /Exit Queue[\s\S]*?Wait:\s*<\/[^>]+>\s*([^<\n\r]+)/i) ??
-    pickText(html, /Exit Queue[\s\S]*?Wait:\s*([^<\n\r]+)/i);
-
-  const churn =
-    pickText(html, /Churn:\s*<\/[^>]+>\s*([^<\n\r]+)/i) ??
-    pickText(html, /Churn:\s*([^<\n\r]+)/i);
-
+function hdrs() {
   return {
-    chain: "ethereum",
-    activeValidators: activeValidators ?? null,
-    totalStaked: stakedEth ? `${stakedEth} ETH` : null,
-    apr: (apr ?? null),
-    entryQueue: entryEth && entryWait
-      ? `${entryEth} ETH • ${clean(entryWait)}`
-      : (entryEth ? `${entryEth} ETH` : null),
-    exitQueue: exitEth && exitWait
-      ? `${exitEth} ETH • ${clean(exitWait)}`
-      : (exitEth ? `${exitEth} ETH` : null),
-    churnLimit: churn ? clean(churn) : null,
-    updatedAt: Date.now(),
+    "user-agent": "Mozilla/5.0 (gotnodes.xyz; +https://gotnodes.xyz)",
+    "accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "accept-language": "en-US,en;q=0.9",
   };
 }
 
 /**
- * AVAX sources:
- * - Primary: https://www.avax.network/build/validators
- * - Fallback: https://avascan.info/stats/staking
- *
- * Avalanche does NOT have ETH-style entry/exit queues publicly in the same way.
- * We keep those as "—" unless/until you provide a specific source/endpoint.
+ * ETH GLOBAL VALIDATOR STATS
+ * Source: validatorqueue.com (explicitly states data provided by beaconcha.in)
+ * We parse these 6 metrics:
+ * 1) Active validators
+ * 2) Total staked
+ * 3) Staking APR
+ * 4) Entry queue (ETH + wait)
+ * 5) Exit queue (ETH + wait)
+ * 6) Churn limit
  */
-async function getAvalancheValidatorStats({ LLAMA_KEY } = {}) {
-  const tryFetch = async (u) => {
-    const r = await fetch(u, {
+async function getEthereumValidatorStats({ BEACON_KEY, LLAMA_KEY } = {}) {
+  const res = await fetch("https://validatorqueue.com/", { headers: hdrs() });
+  if (!res.ok) throw new Error(`validatorqueue_bad_status_${res.status}`);
+  const text = await res.text();
+
+  // Network (these appear as plain text on the page)
+  const activeValidators = pickNumber(text, /Active Validators:\s*([0-9,]+)/i);
+  const stakedEthM = pickText(text, /Staked ETH:\s*([0-9.]+)M/i); // e.g. 36.5M
+  const apr = pickNumber(text, /APR:\s*([0-9.]+)%/i);
+
+  // Entry queue section
+  const entryEth = pickNumber(text, /Entry Queue[\s\S]*?ETH:\s*([0-9,]+)/i);
+  const entryWait = pickText(text, /Entry Queue[\s\S]*?Wait:\s*([0-9a-z ,]+)\s*/i);
+  const entryChurn = pickText(text, /Entry Queue[\s\S]*?Churn:\s*([0-9/]+\/epoch)/i)
+    ?? pickText(text, /Churn:\s*([0-9/]+\/epoch)/i);
+
+  // Exit queue section
+  const exitEth = pickNumber(text, /Exit Queue[\s\S]*?ETH:\s*([0-9,]+)/i);
+  const exitWait = pickText(text, /Exit Queue[\s\S]*?Wait:\s*([0-9a-z ,]+)\s*/i);
+  const exitChurn = pickText(text, /Exit Queue[\s\S]*?Churn:\s*([0-9/]+\/epoch)/i);
+
+  const churnLimit = entryChurn || exitChurn || null;
+
+  return {
+    chain: "ethereum",
+    activeValidators: activeValidators ?? null,
+    totalStaked: stakedEthM ? `${stakedEthM}M ETH` : null,
+    apr: (apr ?? null),
+
+    entryQueue: (entryEth || entryWait)
+      ? `${entryEth ?? "—"} ETH${entryWait ? ` • ${clean(entryWait)}` : ""}`
+      : null,
+
+    exitQueue: (exitEth || exitWait)
+      ? `${exitEth ?? "—"} ETH${exitWait ? ` • ${clean(exitWait)}` : ""}`
+      : null,
+
+    churnLimit: churnLimit ? clean(churnLimit) : null,
+    updatedAt: Date.now(),
+    source: "validatorqueue.com (beaconcha.in)",
+  };
+}
+
+/**
+ * AVAX GLOBAL VALIDATOR STATS (PRIMARY NETWORK)
+ * Source: AvaCloud / Glacier Data API "List validators"
+ * Auth header required: x-glacier-api-key
+ * We compute:
+ * 1) Active validators (count)
+ * 2) Total staked (sum(amountStaked) across active validators)
+ *
+ * NOTE: Avalanche does not have ETH-style entry/exit queues publicly in the same way.
+ * We keep entry/exit/churn as "—" unless you specify the exact metric source you want.
+ */
+async function getAvalancheValidatorStats({ GLACIER_KEY } = {}) {
+  if (!GLACIER_KEY) throw new Error("missing_GLACIER_API_KEY");
+
+  const base = "https://glacier-api.avax.network";
+  const path = "/v1/networks/mainnet/validators";
+  const pageSize = 100;
+
+  let nextPageToken = null;
+  let count = 0;
+  let totalStaked_nAVAX = 0n;
+
+  // paginate through active validators
+  for (let i = 0; i < 50; i++) { // safety cap
+    const u = new URL(base + path);
+    u.searchParams.set("validationStatus", "active");
+    u.searchParams.set("pageSize", String(pageSize));
+    if (nextPageToken) u.searchParams.set("pageToken", nextPageToken);
+
+    const res = await fetch(u.toString(), {
       headers: {
-        "user-agent": "Mozilla/5.0 (gotnodes.xyz; +https://gotnodes.xyz)",
-        "accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        "accept-language": "en-US,en;q=0.9",
-        ...(LLAMA_KEY ? { "x-llama-key-present": "1" } : {}),
+        "x-glacier-api-key": GLACIER_KEY,
+        "accept": "application/json",
       },
     });
-    if (!r.ok) throw new Error(`upstream_bad_status_${r.status}`);
-    return r.text();
-  };
 
-  let html;
-  try {
-    html = await tryFetch("https://www.avax.network/build/validators");
-  } catch (e1) {
-    html = await tryFetch("https://avascan.info/stats/staking");
+    if (!res.ok) {
+      throw new Error(`glacier_bad_status_${res.status}`);
+    }
+
+    const j = await res.json();
+    const validators = Array.isArray(j?.validators) ? j.validators : [];
+
+    for (const v of validators) {
+      count += 1;
+
+      // amountStaked is a string; docs use nAVAX in query params; amountStaked also comes as string. :contentReference[oaicite:2]{index=2}
+      // We treat it as nAVAX (1 AVAX = 1e9 nAVAX).
+      const amt = safeBigInt(v?.amountStaked);
+      totalStaked_nAVAX += amt;
+    }
+
+    nextPageToken = j?.nextPageToken || null;
+    if (!nextPageToken) break;
   }
 
-  // Validators (best-effort across both pages)
-  const validators =
-    pickNumber(html, /staking validators[^0-9]*([0-9,]+)/i) ??
-    pickNumber(html, /Total Validators[^0-9]*([0-9,]+)/i) ??
-    pickNumber(html, /Validators[^0-9]*([0-9,]+)/i);
-
-  // Total staked (best-effort across both pages)
-  const totalStakeFromAvascan =
-    pickText(html, /(Total Stake|Total Staked)[^0-9]*([0-9.,]+)\s*AVAX/i);
-
-  const totalStake =
-    (pickText(html, /Total Stake[\s\S]*?([0-9,]{3,})/i)
-      ? `${pickText(html, /Total Stake[\s\S]*?([0-9,]{3,})/i)} AVAX`
-      : null) ??
-    (pickText(html, /validation stake[\s\S]*?([0-9,]{3,})/i)
-      ? `${pickText(html, /validation stake[\s\S]*?([0-9,]{3,})/i)} AVAX`
-      : null) ??
-    (totalStakeFromAvascan ? clean(totalStakeFromAvascan) : null);
-
-  // APR (not always present)
-  const apr =
-    pickNumber(html, /Annual Percentage Yield[^0-9]*([0-9.]+)\s*%/i) ??
-    pickNumber(html, /(Staking Rewards|Rewards|APR)[^0-9]*([0-9.]+)\s*%/i);
+  const totalStaked_AVAX = formatAVAXfromnAVAX(totalStaked_nAVAX);
 
   return {
     chain: "avalanche",
-    activeValidators: validators ?? null,
-    totalStaked: totalStake ? clean(totalStake) : null,
-    apr: (apr ?? null),
+    activeValidators: count || null,
+    totalStaked: totalStaked_AVAX ? `${totalStaked_AVAX} AVAX` : null,
+    apr: null,
     entryQueue: "—",
     exitQueue: "—",
     churnLimit: "—",
     updatedAt: Date.now(),
+    source: "AvaCloud/Glacier Data API (Primary Network validators)",
   };
 }
 
 function pickText(src, re) {
   const m = src.match(re);
-  if (!m) return null;
-  // return the first non-empty capture group (supports 1 or 2 groups)
-  return String(m[2] ?? m[1] ?? "").trim();
+  return m ? String(m[1] ?? "").trim() : null;
 }
 
 function pickNumber(src, re) {
   const m = src.match(re);
   if (!m) return null;
-  const raw = String(m[2] ?? m[1] ?? "").replace(/,/g, "").trim();
+  const raw = String(m[1] ?? "").replace(/,/g, "").trim();
   const n = Number(raw);
   return Number.isFinite(n) ? n : null;
 }
 
 function clean(s) {
   return String(s).replace(/\s+/g, " ").trim();
+}
+
+function safeBigInt(v) {
+  try {
+    if (v === null || v === undefined) return 0n;
+    const s = String(v).trim();
+    if (!s) return 0n;
+    // strip decimals if any (shouldn't happen, but just in case)
+    const t = s.includes(".") ? s.split(".")[0] : s;
+    return BigInt(t);
+  } catch {
+    return 0n;
+  }
+}
+
+// nAVAX is nano-AVAX (1e9). Docs use nAVAX in parameters and constraints align with 1e9. :contentReference[oaicite:3]{index=3}
+function formatAVAXfromnAVAX(n) {
+  const denom = 1000000000n; // 1e9
+  const whole = n / denom;
+  const frac = n % denom;
+
+  // show 2 decimals (truncate)
+  const frac2 = (frac * 100n) / denom;
+  const s = `${whole.toString()}.${frac2.toString().padStart(2, "0")}`;
+
+  // add commas to whole part
+  const [w, f] = s.split(".");
+  const withCommas = w.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+  return `${withCommas}.${f}`;
 }
