@@ -19,6 +19,10 @@ body{
               radial-gradient(900px 650px at 70% 30%, rgba(0,255,170,.06), transparent 60%),
               var(--bg);
   color:var(--fg);
+
+  display:flex;
+  flex-direction:column;
+  min-height:100vh;
 }
 
 .scanlines{
@@ -35,14 +39,15 @@ body{
 }
 
 .wrap{
-  width: calc(100vw - 72px); /* 36px margin on each side */
+  width: calc(100vw - 72px); /* 36px margin each side */
   max-width: none;
   margin: 28px auto 18px;
+  flex: 1; /* lets footer sit at bottom */
 }
 
 .hero-grid{
   display:grid;
-   grid-template-columns: minmax(0, 640px) minmax(0, 1fr);
+     grid-template-columns: 1fr 1fr;
   gap:18px;
   align-items:start;
 }
