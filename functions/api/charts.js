@@ -47,10 +47,27 @@ async function getChainCharts({ chain, LLAMA_KEY }) {
   const tvl = tail(tvlSeries, 180);
   const candles = toWeeklyCandles(tail(volSeries, 180));
 
+   const tvlNow = tvl?.length ? tvl[tvl.length - 1].v : null;
+  const tvl30dAgo = tvl?.length ? tvl[Math.max(0, tvl.length - 31)].v : null;
+  const tvlChg30 =
+    (tvlNow != null && tvl30dAgo != null && tvl30dAgo !== 0)
+      ? ((tvlNow - tvl30dAgo) / tvl30dAgo) * 100
+      : null;
+
+  const tvlRange =
+    tvl?.length ? { from: tvl[0].t, to: tvl[tvl.length - 1].t } : null;
+
+  const volNow =
+    candles?.length ? candles[candles.length - 1].c : null;
+
+  const volRange =
+    candles?.length ? { from: candles[0].t, to: candles[candles.length - 1].t } : null;
+
   return {
     chain,
     tvl,
     volumeWeekly: candles,
+    meta: { tvlNow, tvlChg30, tvlRange, volNow, volRange },
     updatedAt: Date.now(),
     source: {
       tvl: "pro-api.llama.fi /api/v2/historicalChainTvl/{chain}",
