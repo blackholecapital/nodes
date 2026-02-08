@@ -28,6 +28,23 @@ function fmtRange(r){
   return `${a.toLocaleDateString()}–${b.toLocaleDateString()}`;
 }
 
+function fmtUsdCompact(n){
+  if (n == null) return "—";
+  const x = Number(n);
+  if (!Number.isFinite(x)) return "—";
+  const abs = Math.abs(x);
+  if (abs >= 1e12) return `$${(x/1e12).toFixed(2)}T`;
+  if (abs >= 1e9) return `$${(x/1e9).toFixed(2)}B`;
+  if (abs >= 1e6) return `$${(x/1e6).toFixed(2)}M`;
+  if (abs >= 1e3) return `$${(x/1e3).toFixed(2)}K`;
+  return `$${x.toFixed(2)}`;
+}
+
+function fmtDateShort(ms){
+  const d = new Date(ms);
+  return `${d.getMonth()+1}/${d.getDate()}/${d.getFullYear()}`;
+}
+
 function applyChartMeta(prefix, meta){
   if (!meta) return;
   setText(`${prefix}TvlNow`, `TVL: ${fmtUsdShort(meta.tvlNow)}`);
@@ -121,18 +138,47 @@ function drawLineChart(canvasId, points){
 
   const line = cssVar("--line", "rgba(0,255,170,.45)");
   const grid = cssVar("--line2", "rgba(0,255,170,.22)");
+  const fg = cssVar("--fg", "#bfffe6");
 
-  // subtle grid baseline
+  // reserve room for scale labels and x-axis dates
+  const labelPadTop = 14;
+  const labelPadBot = 16;
+
+  const xFor = (x) => pad + ((x - minX) / Math.max(1, (maxX - minX))) * (w - pad*2);
+  const yFor = (y) =>
+    (h - pad - labelPadBot) -
+    ((y - minY) / Math.max(1, (maxY - minY))) * (h - pad*2 - labelPadTop - labelPadBot);
+
+  // baseline
   ctx.strokeStyle = grid;
   ctx.lineWidth = 1;
   ctx.beginPath();
-  ctx.moveTo(pad, h - pad);
-  ctx.lineTo(w - pad, h - pad);
+  ctx.moveTo(pad, h - pad - labelPadBot);
+  ctx.lineTo(w - pad, h - pad - labelPadBot);
   ctx.stroke();
 
-  const xFor = (x) => pad + ((x - minX) / Math.max(1, (maxX - minX))) * (w - pad*2);
-  const yFor = (y) => (h - pad) - ((y - minY) / Math.max(1, (maxY - minY))) * (h - pad*2);
+  // scale + date context text
+  ctx.fillStyle = fg;
+  ctx.font = "11px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace";
 
+  // High / Low
+  ctx.textAlign = "left";
+  ctx.textBaseline = "top";
+  ctx.fillText(`H ${fmtUsdCompact(maxY)}`, pad, pad);
+  ctx.textBaseline = "bottom";
+  ctx.fillText(`L ${fmtUsdCompact(minY)}`, pad, h - pad);
+
+  // Date range
+  ctx.textBaseline = "bottom";
+  ctx.textAlign = "left";
+  ctx.fillText(fmtDateShort(minX), pad, h - pad);
+  ctx.textAlign = "right";
+  ctx.fillText(fmtDateShort(maxX), w - pad, h - pad);
+
+  // reset
+  ctx.textAlign = "left";
+
+  // plot
   ctx.strokeStyle = line;
   ctx.lineWidth = 1.5;
   ctx.beginPath();
@@ -165,15 +211,44 @@ function drawCandles(canvasId, candles){
   const xStep = (w - pad*2) / Math.max(1, candles.length);
   const candleW = Math.max(2, Math.floor(xStep * 0.6));
 
-  const yFor = (y) => (h - pad) - ((y - minY) / Math.max(1, (maxY - minY))) * (h - pad*2);
+  // reserve room for scale labels and x-axis dates
+  const labelPadTop = 14;
+  const labelPadBot = 16;
+
+  const yFor = (y) =>
+    (h - pad - labelPadBot) -
+    ((y - minY) / Math.max(1, (maxY - minY))) * (h - pad*2 - labelPadTop - labelPadBot);
 
   // baseline grid
   ctx.strokeStyle = grid;
   ctx.lineWidth = 1;
   ctx.beginPath();
-  ctx.moveTo(pad, h - pad);
-  ctx.lineTo(w - pad, h - pad);
+  ctx.moveTo(pad, h - pad - labelPadBot);
+  ctx.lineTo(w - pad, h - pad - labelPadBot);
   ctx.stroke();
+
+  // scale + date context text
+  ctx.fillStyle = fg;
+  ctx.font = "11px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace";
+
+  // High / Low
+  ctx.textAlign = "left";
+  ctx.textBaseline = "top";
+  ctx.fillText(`H ${fmtUsdCompact(maxY)}`, pad, pad);
+  ctx.textBaseline = "bottom";
+  ctx.fillText(`L ${fmtUsdCompact(minY)}`, pad, h - pad);
+
+  // Date range
+  const t0 = candles[0].t;
+  const t1 = candles[candles.length - 1].t;
+  ctx.textBaseline = "bottom";
+  ctx.textAlign = "left";
+  ctx.fillText(fmtDateShort(t0), pad, h - pad);
+  ctx.textAlign = "right";
+  ctx.fillText(fmtDateShort(t1), w - pad, h - pad);
+
+  // reset
+  ctx.textAlign = "left";
 
   for (let i=0;i<candles.length;i++){
     const cdl = candles[i];
