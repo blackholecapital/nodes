@@ -186,15 +186,17 @@ body{
 .wire-head{
   display:flex;
   align-items:center;
-  justify-content:space-between;
-  padding-bottom: 10px;
+  justify-content:center;
+  padding: 12px 0 14px;
   border-bottom: 1px solid var(--line2);
+  position: relative;
 }
 
 .wire-title{
-  letter-spacing: .18em;
+  letter-spacing: .22em;
   font-size: 12px;
-  color: rgba(0,255,170,.92);
+  color: rgba(0,255,170,.95);
+  text-align:center;
 }
 
 .wire-badge{
@@ -212,7 +214,8 @@ body{
 .wire-body{
   display:flex;
   flex-direction:column;
-  gap: 8px;
+  gap: 10px;
+  padding-top: 14px; /* breathing room under title */
 }
 
 .kv{
