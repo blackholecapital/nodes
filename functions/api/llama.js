@@ -170,18 +170,35 @@ async function getEthereumValidatorStats({ BEACON_KEY } = {}) {
 }
 
 async function getAvalancheValidatorStats({ GLACIER_KEY } = {}) {
+  const keyPresent = !!GLACIER_KEY;
   if (!GLACIER_KEY) throw new Error("missing_GLACIER_API_KEY");
 
-  // Network details (validator + delegator stats)
-  const res = await fetch("https://data-api.avax.network/v1/networks/mainnet", {
-    headers: {
-      "x-glacier-api-key": GLACIER_KEY,
-      accept: "application/json",
-    },
-  });
+  // Try both hosts (some accounts/projects are routed differently)
+  const hosts = [
+    "https://data-api.avax.network",
+    "https://glacier-api.avax.network",
+  ];
 
-  if (!res.ok) {
-    throw new Error(`avax_network_details_bad_status_${res.status}`);
+  let res = null;
+  let lastStatus = null;
+
+  for (const host of hosts) {
+    const r = await fetch(`${host}/v1/networks/mainnet`, {
+      headers: {
+        "x-glacier-api-key": GLACIER_KEY,
+        accept: "application/json",
+      },
+    });
+
+    lastStatus = r.status;
+    if (r.ok) {
+      res = r;
+      break;
+    }
+  }
+
+  if (!res) {
+    throw new Error(`avax_network_details_bad_status_${lastStatus ?? "unknown"}`);
   }
 
   const j = await res.json();
@@ -222,7 +239,8 @@ async function getAvalancheValidatorStats({ GLACIER_KEY } = {}) {
     churnLimit: stakingRatio ? stakingRatio : "—",
 
     updatedAt: Date.now(),
-    source: "data-api.avax.network /v1/networks/mainnet",
+    source: "avax network details (data-api/glacier-api)",
+    glacierKeyPresent: keyPresent,
   };
 }
 
