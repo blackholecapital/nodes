@@ -8,9 +8,7 @@ function setText(id, v){
 }
 
 function setBadge(id, ok){
-  const el = $(id);
-  if (!el) return;
-  el.textContent = ok ? "LIVE" : "SYNC";
+  // badges removed from UI; keep function as no-op
 }
 
 function fmtNumber(n){
@@ -50,8 +48,6 @@ function applyChain(prefix, data){
 
 async function refreshAll(){
   setText("uiStatus", "Syncing…");
-  setBadge("ethBadge", false);
-  setBadge("avaxBadge", false);
 
   try{
     const [eth, avax] = await Promise.all([
@@ -66,8 +62,6 @@ async function refreshAll(){
     const d = new Date(ts);
     setText("uiLastUpdate", d.toLocaleString());
 
-    setBadge("ethBadge", true);
-    setBadge("avaxBadge", true);
     setText("uiStatus", "Live");
   }catch(e){
     // keep whatever was on screen, just mark status
