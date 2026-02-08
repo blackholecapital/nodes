@@ -53,7 +53,7 @@ body{
   margin: 28px auto 46px;
 }
 
-/* ✅ hero grid aligns rail with GOT NODES top */
+/* hero grid aligns rail with GOT NODES top */
 .hero-grid{
   display:grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 760px);
@@ -65,7 +65,7 @@ body{
   display:block;
 }
 
-/* ✅ 4-card rail grid like your screenshot (2x2) */
+/* 4-card rail grid (2x2) */
 .rail-grid{
   display:grid;
   grid-template-columns: 1fr 1fr;
