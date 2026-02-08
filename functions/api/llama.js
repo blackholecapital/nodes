@@ -6,9 +6,10 @@ export async function onRequest({ request, env }) {
     return json({ error: "missing_or_invalid_chain" }, 400);
   }
 
-  // NOTE: DefiLlama Pro docs authenticate by placing the key in the URL path,
-  // and do not document validator/queue endpoints. We keep this here only
-  // because you store it as VITE_LLAMA_API_KEY.
+  // You said your key is stored as VITE_LLAMA_API_KEY.
+  // DefiLlama Pro docs authenticate via URL path (pro-api.llama.fi/<KEY>/...),
+  // and do not document validator/queue endpoints. We keep the env read here
+  // only so it’s available if/when you provide a specific Pro endpoint later.
   const LLAMA_KEY = env?.VITE_LLAMA_API_KEY;
 
   try {
@@ -39,14 +40,14 @@ function json(obj, status = 200) {
 }
 
 /**
- * ETH source: validatorqueue.com (public dashboard with the exact metrics you want)
- * We parse:
+ * ETH source: validatorqueue.com (public dashboard)
+ * Metrics:
  * - Active Validators
  * - Staked ETH
  * - APR
  * - Entry Queue (ETH + wait)
  * - Exit Queue (ETH + wait)
- * - Churn (e.g. "256/epoch")
+ * - Churn
  */
 async function getEthereumValidatorStats({ LLAMA_KEY } = {}) {
   const res = await fetch("https://validatorqueue.com/", {
@@ -54,63 +55,70 @@ async function getEthereumValidatorStats({ LLAMA_KEY } = {}) {
       "user-agent": "Mozilla/5.0 (gotnodes.xyz; +https://gotnodes.xyz)",
       "accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
       "accept-language": "en-US,en;q=0.9",
-      // Some hosts behave better if an auth header exists; harmless if ignored.
+      // harmless signal header (does not claim to be DefiLlama auth)
       ...(LLAMA_KEY ? { "x-llama-key-present": "1" } : {}),
     },
   });
   if (!res.ok) throw new Error(`validatorqueue_bad_status_${res.status}`);
   const html = await res.text();
 
-  const activeValidators = pickNumber(html, /Active Validators:\s*<\/[^>]+>\s*([0-9,]+)/i)
-    ?? pickNumber(html, /Active Validators:\s*([0-9,]+)/i);
+  const activeValidators =
+    pickNumber(html, /Active Validators:\s*<\/[^>]+>\s*([0-9,]+)/i) ??
+    pickNumber(html, /Active Validators:\s*([0-9,]+)/i);
 
-  const stakedEth = pickText(html, /Staked ETH:\s*<\/[^>]+>\s*([0-9.,]+M)/i)
-    ?? pickText(html, /Staked ETH:\s*([0-9.,]+M)/i);
+  const stakedEth =
+    pickText(html, /Staked ETH:\s*<\/[^>]+>\s*([0-9.,]+M)/i) ??
+    pickText(html, /Staked ETH:\s*([0-9.,]+M)/i);
 
-  const apr = pickNumber(html, /APR:\s*<\/[^>]+>\s*([0-9.]+)%/i)
-    ?? pickNumber(html, /APR:\s*([0-9.]+)%/i);
+  const apr =
+    pickNumber(html, /APR:\s*<\/[^>]+>\s*([0-9.]+)%/i) ??
+    pickNumber(html, /APR:\s*([0-9.]+)%/i);
 
-  const entryEth = pickText(html, /Entry Queue[\s\S]*?ETH:\s*<\/[^>]+>\s*([0-9,]+)/i)
-    ?? pickText(html, /Entry Queue[\s\S]*?ETH:\s*([0-9,]+)/i);
+  const entryEth =
+    pickText(html, /Entry Queue[\s\S]*?ETH:\s*<\/[^>]+>\s*([0-9,]+)/i) ??
+    pickText(html, /Entry Queue[\s\S]*?ETH:\s*([0-9,]+)/i);
 
-  const entryWait = pickText(html, /Entry Queue[\s\S]*?Wait:\s*<\/[^>]+>\s*([^<\n\r]+)/i)
-    ?? pickText(html, /Entry Queue[\s\S]*?Wait:\s*([^<\n\r]+)/i);
+  const entryWait =
+    pickText(html, /Entry Queue[\s\S]*?Wait:\s*<\/[^>]+>\s*([^<\n\r]+)/i) ??
+    pickText(html, /Entry Queue[\s\S]*?Wait:\s*([^<\n\r]+)/i);
 
-  const exitEth = pickText(html, /Exit Queue[\s\S]*?ETH:\s*<\/[^>]+>\s*([0-9,]+)/i)
-    ?? pickText(html, /Exit Queue[\s\S]*?ETH:\s*([0-9,]+)/i);
+  const exitEth =
+    pickText(html, /Exit Queue[\s\S]*?ETH:\s*<\/[^>]+>\s*([0-9,]+)/i) ??
+    pickText(html, /Exit Queue[\s\S]*?ETH:\s*([0-9,]+)/i);
 
-  const exitWait = pickText(html, /Exit Queue[\s\S]*?Wait:\s*<\/[^>]+>\s*([^<\n\r]+)/i)
-    ?? pickText(html, /Exit Queue[\s\S]*?Wait:\s*([^<\n\r]+)/i);
+  const exitWait =
+    pickText(html, /Exit Queue[\s\S]*?Wait:\s*<\/[^>]+>\s*([^<\n\r]+)/i) ??
+    pickText(html, /Exit Queue[\s\S]*?Wait:\s*([^<\n\r]+)/i);
 
-  const churn = pickText(html, /Churn:\s*<\/[^>]+>\s*([^<\n\r]+)/i)
-    ?? pickText(html, /Churn:\s*([^<\n\r]+)/i);
+  const churn =
+    pickText(html, /Churn:\s*<\/[^>]+>\s*([^<\n\r]+)/i) ??
+    pickText(html, /Churn:\s*([^<\n\r]+)/i);
 
   return {
     chain: "ethereum",
     activeValidators: activeValidators ?? null,
     totalStaked: stakedEth ? `${stakedEth} ETH` : null,
     apr: (apr ?? null),
-    entryQueue: entryEth && entryWait ? `${entryEth} ETH • ${clean(entryWait)}` : (entryEth ? `${entryEth} ETH` : null),
-    exitQueue: exitEth && exitWait ? `${exitEth} ETH • ${clean(exitWait)}` : (exitEth ? `${exitEth} ETH` : null),
+    entryQueue: entryEth && entryWait
+      ? `${entryEth} ETH • ${clean(entryWait)}`
+      : (entryEth ? `${entryEth} ETH` : null),
+    exitQueue: exitEth && exitWait
+      ? `${exitEth} ETH • ${clean(exitWait)}`
+      : (exitEth ? `${exitEth} ETH` : null),
     churnLimit: churn ? clean(churn) : null,
     updatedAt: Date.now(),
   };
 }
 
 /**
- * AVAX source: avascan staking stats page (public)
- * We parse best-effort:
- * - Validators count
- * - Total stake
- * - Reward/APR-ish (if present)
+ * AVAX sources:
+ * - Primary: https://www.avax.network/build/validators
+ * - Fallback: https://avascan.info/stats/staking
  *
- * Note: Avalanche doesn’t have ETH-style entry/exit queues; we keep those as "—"
- * and churnLimit as "—" unless present.
+ * Avalanche does NOT have ETH-style entry/exit queues publicly in the same way.
+ * We keep those as "—" unless/until you provide a specific source/endpoint.
  */
 async function getAvalancheValidatorStats({ LLAMA_KEY } = {}) {
-  // Prefer official avax.network validators page (tends to be more stable than scrapers)
-  let html = null;
-
   const tryFetch = async (u) => {
     const r = await fetch(u, {
       headers: {
@@ -124,15 +132,36 @@ async function getAvalancheValidatorStats({ LLAMA_KEY } = {}) {
     return r.text();
   };
 
+  let html;
   try {
     html = await tryFetch("https://www.avax.network/build/validators");
   } catch (e1) {
-    // fallback
     html = await tryFetch("https://avascan.info/stats/staking");
   }
 
-  // APR is not always displayed; keep null if not found.
-  const apr = pickNumber(html, /(Staking Rewards|Rewards|APR)[^0-9]*([0-9.]+)\s*%/i);
+  // Validators (best-effort across both pages)
+  const validators =
+    pickNumber(html, /staking validators[^0-9]*([0-9,]+)/i) ??
+    pickNumber(html, /Total Validators[^0-9]*([0-9,]+)/i) ??
+    pickNumber(html, /Validators[^0-9]*([0-9,]+)/i);
+
+  // Total staked (best-effort across both pages)
+  const totalStakeFromAvascan =
+    pickText(html, /(Total Stake|Total Staked)[^0-9]*([0-9.,]+)\s*AVAX/i);
+
+  const totalStake =
+    (pickText(html, /Total Stake[\s\S]*?([0-9,]{3,})/i)
+      ? `${pickText(html, /Total Stake[\s\S]*?([0-9,]{3,})/i)} AVAX`
+      : null) ??
+    (pickText(html, /validation stake[\s\S]*?([0-9,]{3,})/i)
+      ? `${pickText(html, /validation stake[\s\S]*?([0-9,]{3,})/i)} AVAX`
+      : null) ??
+    (totalStakeFromAvascan ? clean(totalStakeFromAvascan) : null);
+
+  // APR (not always present)
+  const apr =
+    pickNumber(html, /Annual Percentage Yield[^0-9]*([0-9.]+)\s*%/i) ??
+    pickNumber(html, /(Staking Rewards|Rewards|APR)[^0-9]*([0-9.]+)\s*%/i);
 
   return {
     chain: "avalanche",
@@ -148,13 +177,15 @@ async function getAvalancheValidatorStats({ LLAMA_KEY } = {}) {
 
 function pickText(src, re) {
   const m = src.match(re);
-  return m ? (m[1] ?? m[2] ?? "").trim() : null;
+  if (!m) return null;
+  // return the first non-empty capture group (supports 1 or 2 groups)
+  return String(m[2] ?? m[1] ?? "").trim();
 }
 
 function pickNumber(src, re) {
   const m = src.match(re);
   if (!m) return null;
-  const raw = (m[1] ?? m[2] ?? "").replace(/,/g, "").trim();
+  const raw = String(m[2] ?? m[1] ?? "").replace(/,/g, "").trim();
   const n = Number(raw);
   return Number.isFinite(n) ? n : null;
 }
