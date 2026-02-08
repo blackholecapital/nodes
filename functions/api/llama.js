@@ -6,17 +6,25 @@ export async function onRequest({ request, env }) {
     return json({ error: "missing_or_invalid_chain" }, 400);
   }
 
+  // NOTE: DefiLlama Pro docs authenticate by placing the key in the URL path,
+  // and do not document validator/queue endpoints. We keep this here only
+  // because you store it as VITE_LLAMA_API_KEY.
+  const LLAMA_KEY = env?.VITE_LLAMA_API_KEY;
+
   try {
     if (chain === "ethereum") {
-      const data = await getEthereumValidatorStats();
+      const data = await getEthereumValidatorStats({ LLAMA_KEY });
       return json(data, 200);
     }
 
-    const data = await getAvalancheValidatorStats();
+    const data = await getAvalancheValidatorStats({ LLAMA_KEY });
     return json(data, 200);
 
   } catch (e) {
-    return json({ error: "upstream_failed" }, 502);
+    return json({
+      error: "upstream_failed",
+      message: String(e?.message || e),
+    }, 502);
   }
 }
 
@@ -40,11 +48,17 @@ function json(obj, status = 200) {
  * - Exit Queue (ETH + wait)
  * - Churn (e.g. "256/epoch")
  */
-async function getEthereumValidatorStats() {
+async function getEthereumValidatorStats({ LLAMA_KEY } = {}) {
   const res = await fetch("https://validatorqueue.com/", {
-    headers: { "user-agent": "gotnodes/1.0" },
+    headers: {
+      "user-agent": "Mozilla/5.0 (gotnodes.xyz; +https://gotnodes.xyz)",
+      "accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+      "accept-language": "en-US,en;q=0.9",
+      // Some hosts behave better if an auth header exists; harmless if ignored.
+      ...(LLAMA_KEY ? { "x-llama-key-present": "1" } : {}),
+    },
   });
-  if (!res.ok) throw new Error("validatorqueue_bad_status");
+  if (!res.ok) throw new Error(`validatorqueue_bad_status_${res.status}`);
   const html = await res.text();
 
   const activeValidators = pickNumber(html, /Active Validators:\s*<\/[^>]+>\s*([0-9,]+)/i)
@@ -93,17 +107,29 @@ async function getEthereumValidatorStats() {
  * Note: Avalanche doesn’t have ETH-style entry/exit queues; we keep those as "—"
  * and churnLimit as "—" unless present.
  */
-async function getAvalancheValidatorStats() {
-  const res = await fetch("https://avascan.info/stats/staking", {
-    headers: { "user-agent": "gotnodes/1.0" },
-  });
-  if (!res.ok) throw new Error("avascan_bad_status");
-  const html = await res.text();
+async function getAvalancheValidatorStats({ LLAMA_KEY } = {}) {
+  // Prefer official avax.network validators page (tends to be more stable than scrapers)
+  let html = null;
 
-  // These selectors are best-effort because the site is not an API.
-  const validators = pickNumber(html, /Validators[^0-9]*([0-9,]+)/i);
-  const totalStake = pickText(html, /(Total Stake|Total Staked)[^0-9]*([0-9.,]+)\s*AVAX/i)?.match(/([0-9.,]+)\s*AVAX/i)?.[0]
-    ?? pickText(html, /([0-9.,]+)\s*AVAX[\s\S]*?(Total Stake|Total Staked)/i);
+  const tryFetch = async (u) => {
+    const r = await fetch(u, {
+      headers: {
+        "user-agent": "Mozilla/5.0 (gotnodes.xyz; +https://gotnodes.xyz)",
+        "accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "accept-language": "en-US,en;q=0.9",
+        ...(LLAMA_KEY ? { "x-llama-key-present": "1" } : {}),
+      },
+    });
+    if (!r.ok) throw new Error(`upstream_bad_status_${r.status}`);
+    return r.text();
+  };
+
+  try {
+    html = await tryFetch("https://www.avax.network/build/validators");
+  } catch (e1) {
+    // fallback
+    html = await tryFetch("https://avascan.info/stats/staking");
+  }
 
   // APR is not always displayed; keep null if not found.
   const apr = pickNumber(html, /(Staking Rewards|Rewards|APR)[^0-9]*([0-9.]+)\s*%/i);
