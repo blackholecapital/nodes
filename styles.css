@@ -39,10 +39,9 @@ body{
 }
 
 .wrap{
-  width: calc(100vw - 72px); /* 36px margin each side */
-  max-width: none;
+  width:min(1400px, 94vw);
   margin: 28px auto 18px;
-  flex: 1; /* lets footer sit at bottom */
+  flex: 1;
 }
 
 .hero-grid{
@@ -55,6 +54,39 @@ body{
 @media (max-width: 980px){
   .hero-grid{ grid-template-columns: 1fr; }
   .rail-grid{ grid-template-columns: 1fr; }
+}
+
+@media (max-width: 760px){
+  /* 3-window mobile stack: GOT NODES, ETH, AVAX */
+  .wrap{
+    width: calc(100vw - 32px);  /* outer margin on both sides */
+    margin: 18px auto 12px;
+  }
+
+  .hero-grid{
+    grid-template-columns: 1fr;
+    gap: 14px;
+  }
+
+  .rail-grid{
+    grid-template-columns: 1fr;
+    gap: 14px;
+  }
+
+  /* Hide the 2 chart cards on mobile */
+  .wire-card--charts{
+    display:none !important;
+  }
+
+  /* Let cards size naturally on small screens */
+  .wire-card{
+    min-height: 0;
+  }
+
+  /* Footer matches mobile margins */
+  .foot-inner{
+    width: calc(100vw - 32px);
+  }
 }
 
 /* GOT NODES card */
@@ -286,6 +318,51 @@ body{
   font-size: 12px;
   color: var(--fg);
   opacity: .95;
+}
+/* Footer */
+.site-foot{
+  width:100%;
+  margin: 10px 0 22px;
+}
+
+.foot-inner{
+  width:min(1400px, 94vw);
+  margin: 0 auto;
+  display:flex;
+  flex-direction:column;
+  gap: 10px;
+  align-items:center;
+  justify-content:center;
+  color: var(--fg);
+}
+
+.foot-links{
+  display:flex;
+  align-items:center;
+  gap: 10px;
+  letter-spacing:.14em;
+  font-size: 12px;
+}
+
+.foot-link{
+  color: var(--fg);
+  text-decoration:none;
+  border-bottom: 1px solid rgba(191,255,230,.18);
+  padding-bottom: 2px;
+}
+
+.foot-link:hover{
+  border-bottom-color: rgba(191,255,230,.55);
+}
+
+.foot-sep{
+  color: rgba(191,255,230,.55);
+}
+
+.foot-mark{
+  letter-spacing:.18em;
+  font-size: 12px;
+  color: rgba(191,255,230,.75);
 }
 /* CHART cards (bottom 2) */
 .wire-card--charts{
