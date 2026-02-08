@@ -84,10 +84,12 @@ body{
     margin: 18px auto 12px;
   }
 
-  .hero-grid{
-    grid-template-columns: 1fr;
-    gap: 14px;
-  }
+.hero-grid{
+  display:grid;
+  grid-template-columns: minmax(360px, 50%) 1fr; /* left max ~1/2, right grows */
+  gap:18px;
+  align-items:start;
+}
 
   .rail-grid{
     grid-template-columns: 1fr !important;
@@ -249,6 +251,17 @@ body{
 .wire-card--data .wire-title{
   display:block;
   text-align:center;
+}
+
+/* Center titles on ETH / AVAX data cards */
+.wire-card--data .wire-head{
+  padding: 12px 0 10px;
+  border-bottom: 1px solid var(--line2);
+}
+
+.wire-card--data .wire-title{
+  display:block;
+  text-align:center;
   color: var(--fg);
 }
 
@@ -345,6 +358,7 @@ body{
 .site-foot{
   width:100%;
   margin-top:auto;           /* keep footer attached to bottom of the page */
+  margin-bottom: 0;
   padding: 14px 0 22px;
 }
 
@@ -356,7 +370,7 @@ body{
   gap: 10px;
   align-items:center;
   justify-content:center;
-  text-align:center;
+  text-align:center;         /* ensure centered */
   color: var(--fg);
 }
 
