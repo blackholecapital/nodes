@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Got Nodes | Private Placement Validators</title>
   <link rel="stylesheet" href="./styles.css" />
+  <script defer src="./app.js"></script>
 </head>
 <body>
   <div class="scanlines" aria-hidden="true"></div>
@@ -35,15 +36,15 @@
             <div class="meta">
               <div class="meta-item">
                 <span class="meta-k">Refresh</span>
-                <span class="meta-v">1:00</span>
+                <span class="meta-v" id="uiRefresh">1:00</span>
               </div>
               <div class="meta-item">
                 <span class="meta-k">Last update</span>
-                <span class="meta-v">—</span>
+                <span class="meta-v" id="uiLastUpdate">—</span>
               </div>
               <div class="meta-item">
                 <span class="meta-k">Status</span>
-                <span class="meta-v">Booting…</span>
+                <span class="meta-v" id="uiStatus">Booting…</span>
               </div>
             </div>
           </div>
@@ -51,18 +52,51 @@
           <div class="edit-wrap">
             <div class="edit-top">
               <div class="edit-title">NETWORK FEEDS</div>
-              <button class="btn" type="button" disabled>REFRESH</button>
+              <button class="btn" id="btnRefresh" type="button">REFRESH</button>
             </div>
           </div>
         </div>
       </header>
 
-      <!-- 4 EMPTY WIREFRAME BOXES (RIGHT SIDE) -->
+      <!-- RIGHT SIDE: 4 BOXES (top 2 populated, bottom 2 empty) -->
       <aside class="hero-side" aria-label="Wireframe cards">
         <div class="rail-grid">
-          <section class="wire-card" aria-label="Wireframe 1"></section>
-          <section class="wire-card" aria-label="Wireframe 2"></section>
+          <!-- TOP LEFT: ETH VALIDATOR STATS -->
+          <section class="wire-card wire-card--data" aria-label="Ethereum validator stats">
+            <div class="wire-head">
+              <div class="wire-title">* * * ETHEREUM * * *</div>
+              <div class="wire-badge" id="ethBadge">SYNC</div>
+            </div>
+            <div class="wire-body">
+              <div class="kv"><span>Active validators</span><span class="v" id="ethActive">loading…</span></div>
+              <div class="kv"><span>Total staked</span><span class="v" id="ethStaked">loading…</span></div>
+              <div class="kv"><span>Staking APR</span><span class="v" id="ethApr">loading…</span></div>
+              <div class="kv"><span>Entry queue</span><span class="v" id="ethEntry">loading…</span></div>
+              <div class="kv"><span>Exit queue</span><span class="v" id="ethExit">loading…</span></div>
+              <div class="kv"><span>Churn limit</span><span class="v" id="ethChurn">loading…</span></div>
+            </div>
+          </section>
+
+          <!-- TOP RIGHT: AVAX VALIDATOR STATS -->
+          <section class="wire-card wire-card--data" aria-label="Avalanche validator stats">
+            <div class="wire-head">
+              <div class="wire-title">* * * AVALANCHE * * *</div>
+              <div class="wire-badge" id="avaxBadge">SYNC</div>
+            </div>
+            <div class="wire-body">
+              <div class="kv"><span>Active validators</span><span class="v" id="avaxActive">loading…</span></div>
+              <div class="kv"><span>Total staked</span><span class="v" id="avaxStaked">loading…</span></div>
+              <div class="kv"><span>Staking APR</span><span class="v" id="avaxApr">loading…</span></div>
+              <div class="kv"><span>Entry queue</span><span class="v" id="avaxEntry">loading…</span></div>
+              <div class="kv"><span>Exit queue</span><span class="v" id="avaxExit">loading…</span></div>
+              <div class="kv"><span>Churn limit</span><span class="v" id="avaxChurn">loading…</span></div>
+            </div>
+          </section>
+
+          <!-- BOTTOM LEFT: EMPTY -->
           <section class="wire-card" aria-label="Wireframe 3"></section>
+
+          <!-- BOTTOM RIGHT: EMPTY -->
           <section class="wire-card" aria-label="Wireframe 4"></section>
         </div>
       </aside>
