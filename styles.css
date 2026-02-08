@@ -49,15 +49,15 @@ body{
 }
 
 .wrap{
-  width:min(1100px, 92vw);
+  width:min(1400px, 94vw);
   margin: 28px auto 46px;
 }
 
 /* ✅ hero grid aligns rail with GOT NODES top */
 .hero-grid{
   display:grid;
-  grid-template-columns: 1fr min(760px, 46vw);
-  gap: 16px;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 760px);
+  gap: 18px;
   align-items:start;
 }
 
