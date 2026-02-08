@@ -171,44 +171,83 @@ async function getEthereumValidatorStats({ BEACON_KEY } = {}) {
 }
 
 async function getAvalancheValidatorStats({ GLACIER_KEY } = {}) {
-  // Avalanche global validator stats are sourced from Glacier (Avalanche official API)
-  // using the provided GLACIER_API_KEY (env). If missing, we still try (some endpoints may be public).
-  const key = GLACIER_KEY || null;
+  if (!GLACIER_KEY) throw new Error("missing_GLACIER_API_KEY");
 
-  // We fetch:
-  // - active validators count
-  // - total staked (AVAX)
-  // - staking APR (if available)
-  // - entry queue (best-effort: pending validators)
-  // - exit queue (best-effort)
-  // - churn limit (best-effort / not always exposed on Avalanche)
+  // Use official "Get network details" endpoint (validator + delegator stats)
+  // Docs: GET https://data-api.avax.network/v1/networks/mainnet  (x-glacier-api-key) :contentReference[oaicite:1]{index=1}
+  const res = await fetch("https://data-api.avax.network/v1/networks/mainnet", {
+    headers: {
+      "x-glacier-api-key": GLACIER_KEY,
+      "accept": "application/json",
+    },
+  });
 
-  // NOTE: Glacier endpoints and shapes can vary by version; we keep this defensive.
-
-  const headers = {
-    ...hdrs(),
-    ...(key ? { "x-glacier-api-key": key } : {}),
-  };
-
-  // Try a few common Glacier paths in order until we get something useful.
-  const tryUrls = [
-    "https://glacier-api.avax.network/v1/networks/mainnet/validators",
-    "https://glacier-api.avax.network/v1/networks/mainnet/staking/validators",
-    "https://glacier-api.avax.network/v2/networks/mainnet/validators",
-  ];
-
-  let data = null;
-  for (const u of tryUrls) {
-    try {
-      const r = await fetch(u, { headers });
-      if (!r.ok) continue;
-      const j = await r.json();
-      data = j;
-      break;
-    } catch (_) {
-      // continue
-    }
+  if (!res.ok) {
+    throw new Error(`avax_network_details_bad_status_${res.status}`);
   }
+
+  const j = await res.json();
+
+  const vd = j?.validatorDetails || {};
+  const dd = j?.delegatorDetails || {};
+
+  // These values are returned as strings in the API schema :contentReference[oaicite:2]{index=2}
+  // We treat amount strings as nAVAX if numeric (consistent with Avalanche staking unit usage).
+  const validatorCount = Number(vd?.validatorCount);
+  const totalAmountStaked_nAVAX = safeBigInt(vd?.totalAmountStaked);
+  const annualReward_nAVAX = safeBigInt(vd?.estimatedAnnualStakingReward);
+
+  const delegatorCount = Number(dd?.delegatorCount);
+  const delegatorStaked_nAVAX = safeBigInt(dd?.totalAmountStaked);
+
+  // APR = estimatedAnnualStakingReward / totalAmountStaked * 100
+  const apr = calcAprPct(annualReward_nAVAX, totalAmountStaked_nAVAX);
+
+  const totalStaked_AVAX =
+    totalAmountStaked_nAVAX > 0n ? formatAVAXfromnAVAX(totalAmountStaked_nAVAX) : null;
+
+  const delegatorStaked_AVAX =
+    delegatorStaked_nAVAX > 0n ? formatAVAXfromnAVAX(delegatorStaked_nAVAX) : null;
+
+  const stakingRatioRaw = vd?.stakingRatio;
+  const stakingRatio =
+    stakingRatioRaw != null && String(stakingRatioRaw).trim() !== ""
+      ? String(stakingRatioRaw).trim()
+      : null;
+
+  return {
+    chain: "avalanche",
+    activeValidators: Number.isFinite(validatorCount) ? validatorCount : null,
+    totalStaked: totalStaked_AVAX ? `${totalStaked_AVAX} AVAX` : null,
+    apr: apr,
+
+    // Reuse existing 6-slot UI fields for 3 extra top metrics
+    entryQueue: Number.isFinite(delegatorCount) ? delegatorCount.toLocaleString("en-US") : "—",
+    exitQueue: delegatorStaked_AVAX ? `${delegatorStaked_AVAX} AVAX` : "—",
+    churnLimit: stakingRatio ? stakingRatio : "—",
+
+    updatedAt: Date.now(),
+    source: "data-api.avax.network /v1/networks/mainnet",
+  };
+}
+
+// APR helper: returns Number (percent) or null
+function calcAprPct(annualReward_nAVAX, totalStaked_nAVAX) {
+  try {
+    if (annualReward_nAVAX <= 0n) return null;
+    if (totalStaked_nAVAX <= 0n) return null;
+
+    // percent with 2 decimals: (reward/staked)*100
+    // scaled = reward * 10000 / staked  => 2 decimals percent
+    const scaled = (annualReward_nAVAX * 10000n) / totalStaked_nAVAX;
+    const whole = Number(scaled / 100n);
+    const frac = Number(scaled % 100n);
+    return Number(`${whole}.${String(frac).padStart(2, "0")}`);
+  } catch {
+    return null;
+  }
+}
+
 
   // If Glacier didn't respond with validator list data, return null fields (UI will show —)
   if (!data) {
