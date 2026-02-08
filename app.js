@@ -7,6 +7,38 @@ function setText(id, v){
   if (el) el.textContent = v ?? "—";
 }
 
+function fmtUsdShort(n){
+  if (n == null || !Number.isFinite(n)) return "—";
+  const abs = Math.abs(n);
+  if (abs >= 1e12) return `$${(n/1e12).toFixed(2)}T`;
+  if (abs >= 1e9) return `$${(n/1e9).toFixed(2)}B`;
+  if (abs >= 1e6) return `$${(n/1e6).toFixed(2)}M`;
+  return `$${n.toFixed(2)}`;
+}
+
+function fmtPct(n){
+  if (n == null || !Number.isFinite(n)) return "—";
+  return `${n >= 0 ? "+" : ""}${n.toFixed(2)}%`;
+}
+
+function fmtRange(r){
+  if (!r) return "—";
+  const a = new Date(r.from);
+  const b = new Date(r.to);
+  return `${a.toLocaleDateString()}–${b.toLocaleDateString()}`;
+}
+
+function applyChartMeta(prefix, meta){
+  if (!meta) return;
+  setText(`${prefix}TvlNow`, `TVL: ${fmtUsdShort(meta.tvlNow)}`);
+  setText(`${prefix}TvlChg30`, `30d: ${fmtPct(meta.tvlChg30)}`);
+  setText(`${prefix}TvlRange`, `Range: ${fmtRange(meta.tvlRange)}`);
+  setText(
+    `${prefix}VolRange`,
+    `Vol: ${fmtUsdShort(meta.volNow)} • ${fmtRange(meta.volRange)}`
+  );
+}
+
 function setBadge(id, ok){
   // badges removed from UI; keep function as no-op
 }
@@ -190,11 +222,13 @@ async function refreshAll(){
     applyChain("avax", avax);
 
     // Charts (eye candy)
-    drawLineChart("ethTvlChart", ethCharts.tvl);
+       drawLineChart("ethTvlChart", ethCharts.tvl);
     drawCandles("ethVolChart", ethCharts.volumeWeekly);
+    applyChartMeta("eth", ethCharts.meta);
 
     drawLineChart("avaxTvlChart", avaxCharts.tvl);
     drawCandles("avaxVolChart", avaxCharts.volumeWeekly);
+    applyChartMeta("avax", avaxCharts.meta);
 
     const ts = eth.updatedAt || avax.updatedAt || Date.now();
     const d = new Date(ts);
