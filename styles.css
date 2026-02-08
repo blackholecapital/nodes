@@ -155,9 +155,11 @@ body{
   border:1px solid var(--line2);
   background: rgba(0,0,0,.22);
   color: var(--fg);
+  cursor:pointer;
 }
+.btn:disabled{ opacity:.6; cursor:not-allowed; }
 
-/* RIGHT SIDE: 4 EMPTY WIREFRAME CARDS */
+/* RIGHT SIDE: 4 BOXES */
 .rail-grid{
   display:grid;
   grid-template-columns: 1fr 1fr;
@@ -171,4 +173,59 @@ body{
   border-radius: 22px;
   background: linear-gradient(180deg, rgba(0,255,170,.03), rgba(0,0,0,0));
   box-shadow: 0 0 0 1px rgba(0,255,170,.08) inset, 0 0 45px var(--glow2);
+  padding: 14px 14px 12px;
+}
+
+/* POPULATED cards */
+.wire-card--data{
+  display:flex;
+  flex-direction:column;
+  gap:12px;
+}
+
+.wire-head{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--line2);
+}
+
+.wire-title{
+  letter-spacing: .18em;
+  font-size: 12px;
+  color: rgba(0,255,170,.92);
+}
+
+.wire-badge{
+  border:1px solid var(--line2);
+  border-radius: 999px;
+  padding: 6px 10px;
+  font-size: 11px;
+  letter-spacing: .14em;
+  background: rgba(0,0,0,.22);
+  color: var(--fg);
+  min-width: 70px;
+  text-align:center;
+}
+
+.wire-body{
+  display:flex;
+  flex-direction:column;
+  gap: 8px;
+}
+
+.kv{
+  display:flex;
+  align-items:baseline;
+  justify-content:space-between;
+  gap: 10px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.kv .v{
+  color: var(--fg);
+  letter-spacing: .02em;
+  white-space:nowrap;
 }
