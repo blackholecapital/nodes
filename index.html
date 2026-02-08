@@ -91,11 +91,40 @@
             </div>
           </section>
 
-          <!-- BOTTOM LEFT: EMPTY -->
-          <section class="wire-card" aria-label="Wireframe 3"></section>
+                  <!-- BOTTOM LEFT: ETH CHARTS -->
+          <section class="wire-card wire-card--charts" aria-label="Ethereum charts">
+            <div class="wire-head">
+              <div class="wire-title">ETH • TVL + VOLUME</div>
+            </div>
+            <div class="wire-charts">
+              <div class="chart-block">
+                <div class="chart-label">Chain TVL (USD)</div>
+                <canvas id="ethTvlChart" class="chart-canvas" height="110"></canvas>
+              </div>
+              <div class="chart-block">
+                <div class="chart-label">DEX Volume (weekly candles)</div>
+                <canvas id="ethVolChart" class="chart-canvas" height="110"></canvas>
+              </div>
+            </div>
+          </section>
 
-          <!-- BOTTOM RIGHT: EMPTY -->
-          <section class="wire-card" aria-label="Wireframe 4"></section>
+          <!-- BOTTOM RIGHT: AVAX CHARTS -->
+          <section class="wire-card wire-card--charts" aria-label="Avalanche charts">
+            <div class="wire-head">
+              <div class="wire-title">AVAX • TVL + VOLUME</div>
+            </div>
+            <div class="wire-charts">
+              <div class="chart-block">
+                <div class="chart-label">Chain TVL (USD)</div>
+                <canvas id="avaxTvlChart" class="chart-canvas" height="110"></canvas>
+              </div>
+              <div class="chart-block">
+                <div class="chart-label">DEX Volume (weekly candles)</div>
+                <canvas id="avaxVolChart" class="chart-canvas" height="110"></canvas>
+              </div>
+            </div>
+          </section>
+
         </div>
       </aside>
     </div>
