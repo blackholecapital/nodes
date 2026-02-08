@@ -6,16 +6,9 @@
   --green: #00ffaa;
   --green-rgb: 0 255 170;
 
-  --green2:#00e5a8;
-  --green2-rgb: 0 229 168;
-
   --text:#d7ffe6;
   --muted:#7fe7a8;
-  --warn:#ffcf5a;
-  --bad:#ff5a7a;
-  --shadow: rgba(0,0,0,0.55);
 
-  --border: rgb(var(--green-rgb) / 0.45);
   --border2: rgb(var(--green-rgb) / 0.18);
 
   /* BridgeCard knobs */
@@ -30,7 +23,7 @@
 html,body{ height:100%; }
 body{
   margin:0;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-family: var(--font-mono);
   background:
         radial-gradient(1200px 600px at 20% 10%, rgb(var(--green-rgb) / 0.06), transparent 55%),
         radial-gradient(1000px 700px at 80% 40%, rgb(var(--green-rgb) / 0.04), transparent 60%),
@@ -60,25 +53,34 @@ body{
   margin: 28px auto 46px;
 }
 
-/* ✅ NEW: hero grid aligns the right boxes with the top of GOT NODES box */
+/* ✅ hero grid aligns rail with GOT NODES top */
 .hero-grid{
   display:grid;
   grid-template-columns: 1fr min(760px, 46vw);
   gap: 16px;
-  align-items:start; /* top aligned */
+  align-items:start;
 }
 
-/* right side stack */
 .hero-side{
-  display:flex;
-  flex-direction:column;
+  display:block;
+}
+
+/* ✅ 4-card rail grid like your screenshot (2x2) */
+.rail-grid{
+  display:grid;
+  grid-template-columns: 1fr 1fr;
   gap: 14px;
   align-items:stretch;
 }
 
-/* mobile: stack */
+/* top cards are taller like the screenshot */
+.bridge-card--tall{
+  min-height: 250px;
+}
+
 @media (max-width: 980px){
   .hero-grid{ grid-template-columns: 1fr; }
+  .rail-grid{ grid-template-columns: 1fr; }
 }
 
 .top{ margin:0; }
@@ -206,9 +208,7 @@ body{
   cursor: pointer;
 }
 
-.btn:hover{
-  border-color: rgb(var(--green-rgb)/0.35);
-}
+.btn:hover{ border-color: rgb(var(--green-rgb)/0.35); }
 
 .panel{
   margin-top: 16px;
@@ -262,16 +262,14 @@ body{
   font-size: 12px;
 }
 
-.below-grid{
-  margin-top: 0;
-}
+.below-grid{ margin-top: 0; }
 
-/* ===== BridgeCard Wireframe (example styling) ===== */
+/* ===== BridgeCard wireframe ===== */
 .bridge-card{
   position: relative;
   width: 100%;
   box-sizing: border-box;
-  margin: 0; /* important: no top offset */
+  margin: 0;
   border: 1px solid rgba(0,255,170,var(--wire-alpha, .18));
   border-radius: var(--wire-radius, 18px);
   padding: var(--card-pad, 18px);
@@ -289,17 +287,13 @@ body{
 .bridge-title{
   flex: 1;
   text-align: center;
-  font-family: var(--font-mono);
   letter-spacing: .18em;
   font-size: 12px;
   color: rgba(240,255,250,.92);
 }
 
-.bridge-badges{
-  display:flex;
-  gap: 8px;
-  align-items:center;
-}
+.bridge-badges{ display:flex; gap: 8px; align-items:center; }
+
 .badge{
   padding: 6px 10px;
   border-radius: 999px;
@@ -315,22 +309,13 @@ body{
   margin: 14px 0;
 }
 
-.bridge-status{
-  margin-top: 10px;
-  color: rgba(220,255,245,.88);
-}
-
-.bridge-error{
-  margin-top: 10px;
-  color: rgba(255,120,160,.88);
-}
+.bridge-status{ margin-top: 10px; color: rgba(220,255,245,.88); }
+.bridge-error{ margin-top: 10px; color: rgba(255,120,160,.88); }
 
 .bridge-quote-mini{
-  margin-top: 14px;
-  padding-top: 14px;
-  border-top: 1px solid rgba(0,255,170,0.10);
+  margin-top: 6px;
   display:grid;
-  grid-template-columns: 1fr; /* single column like your example list */
+  grid-template-columns: 1fr;
   gap: 8px;
 }
 
@@ -343,3 +328,26 @@ body{
 
 .muted{ opacity: .65; }
 .mono{ font-family: var(--font-mono); }
+
+/* “chart area” frame like screenshot, but empty for now */
+.bridge-frame{
+  margin-top: 14px;
+  border: 1px solid rgba(0,255,170,0.14);
+  border-radius: 14px;
+  background: rgba(0,0,0,0.18);
+  padding: 12px;
+  min-height: 110px;
+  box-shadow: inset 0 0 0 1px rgba(0,255,170,0.06);
+}
+
+.bridge-frame-title{
+  font-size: 12px;
+  letter-spacing: .12em;
+  color: rgba(240,255,250,.82);
+  margin-bottom: 8px;
+}
+
+.bridge-frame-note{
+  font-size: 12px;
+  color: rgba(220,255,245,.70);
+}
